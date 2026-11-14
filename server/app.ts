@@ -3,8 +3,11 @@ import { buildAgronomicPlan, evaluateCustomRotation } from './agronomyEngine.ts'
 import { runTarsChat, type ChatRequestPayload } from './geminiService.ts';
 import { getNasaEnvironmentData, resolveLocation } from './nasaService.ts';
 import {
+  addFarmNote,
   addFieldPlot,
+  deleteFarmNote,
   deleteSavedPlan,
+  listFarmNotes,
   listFields,
   listSavedPlans,
   removeFieldPlot,
@@ -268,11 +271,30 @@ export function createApiApp() {
     res.json({ plans });
   });
 
+  app.get('/api/notes', (_req, res) => {
+    res.json({ notes: listFarmNotes() });
+  });
+
+  app.post('/api/notes', (req, res) => {
+    const body = req.body as { text?: string };
+    if (!body?.text || !body.text.trim()) {
+      res.status(400).json({ error: 'Note text is required' });
+      return;
+    }
+    const note = addFarmNote(body.text);
+    res.status(201).json({ note, notes: listFarmNotes() });
+  });
+
+  app.delete('/api/notes/:id', (req, res) => {
+    const notes = deleteFarmNote(req.params.id);
+    res.json({ notes });
+  });
+
   app.post('/api/chat', async (req, res) => {
     try {
       const payload = req.body as ChatRequestPayload;
-      const reply = await runTarsChat(payload);
-      res.json({ reply });
+      const result = await runTarsChat(payload);
+      res.json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to reach TARS AI right now.';
       console.error('TARS chat error:', message);

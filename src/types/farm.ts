@@ -231,3 +231,9 @@ export interface SavedFarmPlan {
   headlineTip: string;
   savedAt: string;
 }
+
+export interface FarmNote {
+  id: string;
+  text: string;
+  createdAt: string;
+}

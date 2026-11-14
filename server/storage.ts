@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
-import type { FarmFieldPlot, SavedFarmPlan } from '../src/types/farm.ts';
+import type { FarmFieldPlot, FarmNote, SavedFarmPlan } from '../src/types/farm.ts';
 
 interface AlmanacStore {
   fields: FarmFieldPlot[];
   plans: SavedFarmPlan[];
+  notes: FarmNote[];
 }
 
 const DATA_DIR =
@@ -81,7 +82,7 @@ function ensureStore(): AlmanacStore {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!fs.existsSync(STORE_PATH)) {
-    const initial: AlmanacStore = { fields: DEFAULT_FIELDS, plans: [] };
+    const initial: AlmanacStore = { fields: DEFAULT_FIELDS, plans: [], notes: [] };
     fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), 'utf8');
     return initial;
   }
@@ -90,9 +91,10 @@ function ensureStore(): AlmanacStore {
     return {
       fields: Array.isArray(parsed.fields) && parsed.fields.length > 0 ? parsed.fields : DEFAULT_FIELDS,
       plans: Array.isArray(parsed.plans) ? parsed.plans : [],
+      notes: Array.isArray(parsed.notes) ? parsed.notes : [],
     };
   } catch {
-    const fallback: AlmanacStore = { fields: DEFAULT_FIELDS, plans: [] };
+    const fallback: AlmanacStore = { fields: DEFAULT_FIELDS, plans: [], notes: [] };
     fs.writeFileSync(STORE_PATH, JSON.stringify(fallback, null, 2), 'utf8');
     return fallback;
   }
@@ -217,4 +219,28 @@ export function deleteSavedPlan(id: string): SavedFarmPlan[] {
   store.plans = store.plans.filter((p) => p.id !== id);
   writeStore(store);
   return store.plans;
+}
+
+export function listFarmNotes(): FarmNote[] {
+  return ensureStore().notes;
+}
+
+export function addFarmNote(text: string): FarmNote {
+  const store = ensureStore();
+  const clean = text.trim().slice(0, 240);
+  const note: FarmNote = {
+    id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    text: clean,
+    createdAt: new Date().toISOString().slice(0, 10),
+  };
+  store.notes = [note, ...store.notes].slice(0, 30);
+  writeStore(store);
+  return note;
+}
+
+export function deleteFarmNote(id: string): FarmNote[] {
+  const store = ensureStore();
+  store.notes = store.notes.filter((n) => n.id !== id);
+  writeStore(store);
+  return store.notes;
 }

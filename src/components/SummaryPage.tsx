@@ -678,7 +678,7 @@ export function SummaryPage({
             {Math.max(activeField?.cropStrength || 85, Math.round(snap.currentNdvi * 100))} / 100
           </div>
           <p className="text-xs text-almanac-muted leading-relaxed">
-            Satellite leaf health score is {Math.round(snap.currentNdvi * 100)}% for this time of year.
+            Satellite NDVI leaf health score is {Math.round(snap.currentNdvi * 100)}% for this time of year (higher means thicker, healthier green leaves).
           </p>
           <div className="w-full h-2.5 bg-almanac-pill rounded-full overflow-hidden">
             <div
@@ -728,6 +728,21 @@ export function SummaryPage({
           <p className="text-xs text-almanac-muted leading-relaxed">{activeField?.reminderNote}</p>
           <div className="text-xs font-semibold text-almanac-terracotta pt-1">{activeField?.reminderFoot}</div>
         </div>
+      </div>
+
+      {/* Farmer-Centered Field Reality Check */}
+      <div className="bg-almanac-pill/55 border border-almanac-border rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+        <div className="text-almanac-ink leading-relaxed">
+          <strong className="font-serif text-almanac-forest">Your eyes come first:</strong>{' '}
+          Satellites see broad 30m–9km patches and support—not replace—local experience. Always squeeze soil 10 cm deep by hand and check low frost pockets or local water gates before irrigating or transplanting.
+        </div>
+        <button
+          type="button"
+          onClick={() => onNavigate('telemetry')}
+          className="text-xs font-bold text-almanac-forest hover:underline shrink-0 cursor-pointer self-start sm:self-auto"
+        >
+          Test &ldquo;What-If&rdquo; Weather &rarr;
+        </button>
       </div>
 
       {/* Summary Graphs */}

@@ -9,6 +9,7 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react';
+import { readStorage, STORAGE_KEYS, writeStorage } from '../lib/persistence';
 import type {
   AnchorCrop,
   CustomCropId,
@@ -77,6 +78,44 @@ const TAG_TONE_CLASSES: Record<string, string> = {
   amber: 'bg-amber-100 badge-amber text-amber-800',
 };
 
+type WaterSetup = 'drip' | 'rainfed' | 'furrow';
+
+const WATER_SETUPS: { id: WaterSetup; label: string; tip: string }[] = [
+  {
+    id: 'drip',
+    label: '💧 Drip Irrigation',
+    tip: 'Best water efficiency (~30% less evaporation). Water early morning under straw mulch.',
+  },
+  {
+    id: 'rainfed',
+    label: '🌧️ Rain-Fed Only',
+    tip: 'Prioritize winter cover crops to lock rain in soil and lean on chickpeas & sorghum over heavy water users.',
+  },
+  {
+    id: 'furrow',
+    label: '🚜 Furrow / Canal',
+    tip: 'Use deep-root crops (sorghum/rye) to break hardpan so canal water soaks deep instead of running off.',
+  },
+];
+
+function getSoilRoleExplanation(tag: string, family: string): string {
+  const t = tag.toLowerCase();
+  const f = family.toLowerCase();
+  if (t.includes('cover') || t.includes('blanket')) {
+    return 'Cover Crop: Shields bare dirt from wind/rain erosion and feeds humus over winter.';
+  }
+  if (t.includes('bean') || t.includes('nitrogen') || f.includes('fabaceae')) {
+    return 'Nitrogen Fixer: Pulls nitrogen from air into roots, feeding the next crop naturally.';
+  }
+  if (t.includes('deep') || t.includes('root') || t.includes('disease') || t.includes('pest')) {
+    return 'Deep-Root / Pest Breaker: Loosens compacted dirt and breaks tomato/soil pest cycles.';
+  }
+  if (t.includes('drought')) {
+    return 'Drought-Tolerant: Survives on leftover deep moisture with minimal watering.';
+  }
+  return 'Main Cash Crop: Needs clean, fertile soil—never plant back-to-back in the same spot.';
+}
+
 export function RotationsPage({
   data,
   scanning,
@@ -86,15 +125,22 @@ export function RotationsPage({
   onChangeAnchorCrop,
   onSavePlan,
 }: RotationsPageProps) {
+  const savedRotationInputs = readStorage<{
+    waterSetup?: WaterSetup;
+    customCrops?: [CustomCropId, CustomCropId, CustomCropId, CustomCropId];
+  }>(STORAGE_KEYS.ROTATION_INPUTS, {});
+
   const [searchText, setSearchText] = useState(data.location.name);
-  const [customCrops, setCustomCrops] = useState<[CustomCropId, CustomCropId, CustomCropId, CustomCropId]>([
-    'tomatoes',
-    'clover',
-    'chickpeas',
-    'wheat',
-  ]);
+  const [waterSetup, setWaterSetup] = useState<WaterSetup>(savedRotationInputs.waterSetup ?? 'drip');
+  const [customCrops, setCustomCrops] = useState<[CustomCropId, CustomCropId, CustomCropId, CustomCropId]>(
+    savedRotationInputs.customCrops ?? ['tomatoes', 'clover', 'chickpeas', 'wheat']
+  );
   const [evaluation, setEvaluation] = useState<CustomRotationEvaluation | null>(null);
   const [evaluating, setEvaluating] = useState(false);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.ROTATION_INPUTS, { waterSetup, customCrops });
+  }, [waterSetup, customCrops]);
 
   useEffect(() => {
     setSearchText(data.location.name);
@@ -306,6 +352,34 @@ export function RotationsPage({
               );
             })}
           </div>
+
+          {/* Optional Farmer Water Setup Constraint */}
+          <div className="pt-2 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-almanac-pill/50 border border-almanac-border rounded-2xl p-4">
+            <div className="space-y-1">
+              <span className="block text-[11px] font-mono font-bold uppercase text-almanac-muted">
+                Your Water &amp; Equipment Constraint
+              </span>
+              <p className="text-xs text-almanac-ink">
+                {WATER_SETUPS.find((w) => w.id === waterSetup)?.tip}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 shrink-0">
+              {WATER_SETUPS.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  onClick={() => setWaterSetup(w.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs transition cursor-pointer whitespace-nowrap ${
+                    waterSetup === w.id
+                      ? 'bg-almanac-forest btn-forest text-white font-bold'
+                      : 'bg-almanac-card hover:bg-almanac-pill border border-almanac-border text-almanac-ink font-semibold'
+                  }`}
+                >
+                  {w.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -363,11 +437,17 @@ export function RotationsPage({
                 <h4 className="font-serif font-bold text-lg text-almanac-ink leading-snug">{step.crop}</h4>
                 <div className="text-[11px] font-mono text-almanac-muted mt-1">{step.plantingWindow}</div>
                 <p className="text-xs text-almanac-muted mt-2.5 leading-relaxed">{step.note}</p>
+                <div className="mt-2.5 bg-almanac-pill/55 border border-almanac-border/80 rounded-xl p-2.5 text-[11px] text-almanac-ink leading-snug">
+                  {getSoilRoleExplanation(step.tag, step.family)}
+                </div>
               </div>
               <div className="mt-4 pt-3 border-t border-almanac-border flex items-center justify-between text-[11px] font-semibold">
                 <span className="text-almanac-muted">Water Need:</span>
                 <span className="text-almanac-forest tabular-nums">
-                  {step.waterNeed} ({step.waterSavedPct}% saved)
+                  {waterSetup === 'rainfed' && step.waterNeed.toLowerCase().includes('drip')
+                    ? 'Rain-Fed + Heavy Mulch'
+                    : step.waterNeed}{' '}
+                  ({step.waterSavedPct}% saved)
                 </span>
               </div>
             </div>

@@ -7,6 +7,7 @@ import { OrbitalLanding } from './components/OrbitalLanding';
 import { RotationsPage } from './components/RotationsPage';
 import { SummaryPage } from './components/SummaryPage';
 import { TarsRobotChat } from './components/TarsRobotChat';
+import { readStorage, STORAGE_KEYS, writeStorage } from './lib/persistence';
 import type {
   AnchorCrop,
   DashboardPage,
@@ -16,6 +17,18 @@ import type {
   SavedFarmPlan,
   ThemeMode,
 } from './types/farm';
+
+interface SavedAppPrefs {
+  dashboardOpen: boolean;
+  theme: ThemeMode;
+  activePage: DashboardPage;
+  activeFieldId: string;
+  locationQuery: string;
+  lat: number;
+  lon: number;
+  goal: RotationGoal;
+  anchorCrop: AnchorCrop;
+}
 
 const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
   location: {
@@ -189,13 +202,23 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
 };
 
 export default function App() {
-  const [dashboardOpen, setDashboardOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemeMode>('moon');
-  const [activePage, setActivePage] = useState<DashboardPage>('summary');
+  const initialPrefs = useMemo(
+    () =>
+      readStorage<Partial<SavedAppPrefs>>(STORAGE_KEYS.APP_PREFS, {}),
+    []
+  );
+
+  const [dashboardOpen, setDashboardOpen] = useState<boolean>(initialPrefs.dashboardOpen ?? false);
+  const [theme, setTheme] = useState<ThemeMode>(initialPrefs.theme ?? 'moon');
+  const [activePage, setActivePage] = useState<DashboardPage>(initialPrefs.activePage ?? 'summary');
   const [data, setData] = useState<NasaFarmResponse>(INITIAL_FALLBACK_DATA);
-  const [fields, setFields] = useState<FarmFieldPlot[]>([]);
-  const [activeFieldId, setActiveFieldId] = useState<string>('north');
-  const [savedPlans, setSavedPlans] = useState<SavedFarmPlan[]>([]);
+  const [fields, setFields] = useState<FarmFieldPlot[]>(() =>
+    readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, [])
+  );
+  const [activeFieldId, setActiveFieldId] = useState<string>(initialPrefs.activeFieldId ?? 'north');
+  const [savedPlans, setSavedPlans] = useState<SavedFarmPlan[]>(() =>
+    readStorage<SavedFarmPlan[]>(STORAGE_KEYS.PLANS, [])
+  );
 
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
@@ -296,28 +319,96 @@ export default function App() {
     [data.anchorCrop, data.goal, showToast]
   );
 
-  // Initial load: hydrate fields, saved plans, and live Tashkent NASA telemetry
+  // Initial load: hydrate fields, saved plans, and live NASA telemetry (preserving saved local prefs)
   useEffect(() => {
+    const localFields = readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, []);
     fetch('/api/fields')
       .then((r) => r.json())
-      .then((j: { fields?: FarmFieldPlot[] }) => {
-        if (j.fields && j.fields.length > 0) {
-          setFields(j.fields);
-          setActiveFieldId(j.fields[0].id);
+      .then(async (j: { fields?: FarmFieldPlot[] }) => {
+        const serverFields = j.fields ?? [];
+        // Merge if local has user-created plots not on server (e.g. after Vercel cold start)
+        const serverIds = new Set(serverFields.map((f) => f.id));
+        const missingLocal = localFields.filter((lf) => !serverIds.has(lf.id));
+        if (missingLocal.length > 0) {
+          let latestFields = serverFields;
+          for (const mf of missingLocal) {
+            const postRes = await fetch('/api/fields', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: mf.name,
+                areaHa: mf.areaHa,
+                locationQuery: mf.locationQuery,
+                anchorCrop: mf.anchorCrop,
+                goal: mf.goal,
+              }),
+            }).catch(() => null);
+            if (postRes && postRes.ok) {
+              const postJson = (await postRes.json()) as { fields?: FarmFieldPlot[] };
+              if (Array.isArray(postJson.fields)) {
+                latestFields = postJson.fields;
+              }
+            }
+          }
+          setFields(latestFields);
+          writeStorage(STORAGE_KEYS.FIELDS, latestFields);
+        } else if (serverFields.length > 0) {
+          setFields(serverFields);
+          writeStorage(STORAGE_KEYS.FIELDS, serverFields);
+          if (!initialPrefs.activeFieldId) {
+            setActiveFieldId(serverFields[0].id);
+          }
         }
       })
       .catch(() => {});
 
+    const localPlans = readStorage<SavedFarmPlan[]>(STORAGE_KEYS.PLANS, []);
     fetch('/api/plans')
       .then((r) => r.json())
       .then((j: { plans?: SavedFarmPlan[] }) => {
-        if (j.plans) setSavedPlans(j.plans);
+        const serverPlans = j.plans ?? [];
+        const serverIds = new Set(serverPlans.map((p) => p.id));
+        const merged = [...serverPlans, ...localPlans.filter((lp) => !serverIds.has(lp.id))];
+        setSavedPlans(merged);
+        writeStorage(STORAGE_KEYS.PLANS, merged);
       })
       .catch(() => {});
 
-    fetchTelemetry({ q: 'Tashkent Valley, Uzbekistan', goal: 'water', crop: 'tomatoes', showModal: false });
+    fetchTelemetry({
+      q: initialPrefs.locationQuery || 'Tashkent Valley, Uzbekistan',
+      lat: initialPrefs.lat,
+      lon: initialPrefs.lon,
+      goal: initialPrefs.goal || 'water',
+      crop: initialPrefs.anchorCrop || 'tomatoes',
+      showModal: false,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Automatically persist app navigation, theme, active field, and farm location/crop preferences
+  useEffect(() => {
+    writeStorage<SavedAppPrefs>(STORAGE_KEYS.APP_PREFS, {
+      dashboardOpen,
+      theme,
+      activePage,
+      activeFieldId,
+      locationQuery: data.location.name,
+      lat: data.location.lat,
+      lon: data.location.lon,
+      goal: data.goal,
+      anchorCrop: data.anchorCrop,
+    });
+  }, [
+    dashboardOpen,
+    theme,
+    activePage,
+    activeFieldId,
+    data.location.name,
+    data.location.lat,
+    data.location.lon,
+    data.goal,
+    data.anchorCrop,
+  ]);
 
   const flashTransition = useCallback(
     (targetTheme: ThemeMode, origin: { x: number; y: number }, midFn: () => void) => {
@@ -395,6 +486,7 @@ export default function App() {
     }
     const json = (await res.json()) as { field: FarmFieldPlot; fields: FarmFieldPlot[] };
     setFields(json.fields);
+    writeStorage(STORAGE_KEYS.FIELDS, json.fields);
     setActiveFieldId(json.field.id);
     showToast(`Added plot: ${json.field.name}`);
     await fetchTelemetry({
@@ -428,6 +520,7 @@ export default function App() {
     }
     const json = (await res.json()) as { field: FarmFieldPlot; fields: FarmFieldPlot[] };
     setFields(json.fields);
+    writeStorage(STORAGE_KEYS.FIELDS, json.fields);
     showToast(`Updated farm: ${json.field.name}`);
     if (id === activeFieldId) {
       await fetchTelemetry({
@@ -453,6 +546,7 @@ export default function App() {
     }
     const json = (await res.json()) as { fields: FarmFieldPlot[] };
     setFields(json.fields);
+    writeStorage(STORAGE_KEYS.FIELDS, json.fields);
     showToast('Farm plot deleted');
     if (id === activeFieldId && json.fields.length > 0) {
       const next = json.fields[0];
@@ -492,6 +586,7 @@ export default function App() {
       if (!res.ok) throw new Error('Save failed');
       const json = (await res.json()) as { plans: SavedFarmPlan[] };
       setSavedPlans(json.plans);
+      writeStorage(STORAGE_KEYS.PLANS, json.plans);
       showToast(`Saved farm plan for ${data.location.name}`);
     } catch {
       showToast('Failed to save farm plan');
@@ -505,6 +600,7 @@ export default function App() {
       const res = await fetch(`/api/plans/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const json = (await res.json()) as { plans: SavedFarmPlan[] };
       setSavedPlans(json.plans);
+      writeStorage(STORAGE_KEYS.PLANS, json.plans);
       showToast('Removed saved plan');
     } catch {
       showToast('Failed to remove saved plan');

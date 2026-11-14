@@ -74,6 +74,14 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
             ))
           )}
         </div>
+
+        <div className="pt-3 border-t border-almanac-border text-xs text-almanac-muted leading-relaxed">
+          <strong className="text-almanac-ink">Data Fusion Note:</strong> TARS harmonizes coarse-grid{' '}
+          <strong className="text-almanac-ink">SMAP</strong> soil moisture and{' '}
+          <strong className="text-almanac-ink">GPM/IMERG</strong> rainfall with 10m–30m{' '}
+          <strong className="text-almanac-ink">HLS</strong> vegetation passes and{' '}
+          <strong className="text-almanac-ink">NASA POWER</strong> temperatures onto one monthly and daily farm timeline, while keeping local farmer judgment central for micro-climate checks.
+        </div>
       </div>
     </section>
   );

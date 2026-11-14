@@ -1,11 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageSquare, RotateCcw, Send, Sparkles, X } from 'lucide-react';
-import type { FarmFieldPlot, NasaFarmResponse } from '../types/farm';
+import {
+  BookmarkCheck,
+  MessageSquare,
+  Plus,
+  RotateCcw,
+  Send,
+  Sparkles,
+  StickyNote,
+  Trash2,
+  Wrench,
+  X,
+} from 'lucide-react';
+import { readStorage, STORAGE_KEYS, writeStorage } from '../lib/persistence';
+import type { FarmFieldPlot, FarmNote, NasaFarmResponse } from '../types/farm';
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'model';
   text: string;
+  toolsUsed?: string[];
 }
 
 interface TarsRobotChatProps {
@@ -18,9 +31,9 @@ interface TarsRobotChatProps {
 
 const QUICK_QUESTIONS = [
   'Should I water my crops today?',
-  'Will my plants survive or die out?',
-  'What order should I plant in?',
-  'What do the live NASA satellites say?',
+  'Test Tomatoes → Tomatoes → Corn → Wheat',
+  'Compare my farm to Fresno, California',
+  'Remember my east corner stays muddy in spring',
 ];
 
 function TarsSvg({ walking, facing }: { walking: boolean; facing: 1 | -1 }) {
@@ -156,21 +169,81 @@ export function TarsRobotChat({
   const [direction, setDirection] = useState<1 | -1>(1);
   const [hovered, setHovered] = useState(false);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'model',
-      text: `Hello, farmer. I'm TARS. Ask me anything about ${farmData.location.name}, your soil moisture, rain forecast, plant survival %, or crop rotation order.`,
-    },
-  ]);
+  const defaultWelcome: ChatMessage = {
+    id: 'welcome',
+    role: 'model',
+    text: `Hello, farmer. I'm TARS. Ask me anything about ${farmData.location.name}, test any 4-season crop rotation, compare other valleys via NASA satellites, or tell me facts about your land to remember.`,
+  };
+
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const saved = readStorage<ChatMessage[]>(STORAGE_KEYS.CHAT_MESSAGES, []);
+    return saved.length > 0 ? saved : [defaultWelcome];
+  });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [notes, setNotes] = useState<FarmNote[]>(() =>
+    readStorage<FarmNote[]>(STORAGE_KEYS.NOTES, [])
+  );
+  const [showNotesDrawer, setShowNotesDrawer] = useState(false);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   const posXRef = useRef(72);
   const dirRef = useRef<1 | -1>(1);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Persist TARS AI conversation history locally whenever messages change
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.CHAT_MESSAGES, messages);
+  }, [messages]);
+
+  // Persist local farm notes and restore to backend if serverless cold-started empty
+  useEffect(() => {
+    if (!visible) return;
+    let active = true;
+    const localNotes = readStorage<FarmNote[]>(STORAGE_KEYS.NOTES, []);
+    fetch('/api/notes')
+      .then((res) => (res.ok ? res.json() : null))
+      .then(async (json: { notes?: FarmNote[] } | null) => {
+        if (!active || !Array.isArray(json?.notes)) return;
+        const serverNotes = json.notes;
+        const serverTexts = new Set(serverNotes.map((n) => n.text));
+        const missingLocal = localNotes.filter((ln) => !serverTexts.has(ln.text));
+
+        if (missingLocal.length > 0) {
+          let latest = serverNotes;
+          for (const ln of missingLocal) {
+            const postRes = await fetch('/api/notes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: ln.text }),
+            }).catch(() => null);
+            if (postRes && postRes.ok) {
+              const postJson = (await postRes.json()) as { notes?: FarmNote[] };
+              if (Array.isArray(postJson.notes)) {
+                latest = postJson.notes;
+              }
+            }
+          }
+          if (active) {
+            setNotes(latest);
+            writeStorage(STORAGE_KEYS.NOTES, latest);
+          }
+        } else {
+          setNotes(serverNotes);
+          writeStorage(STORAGE_KEYS.NOTES, serverNotes);
+        }
+      })
+      .catch(() => {
+        // Keep local notes if offline
+      });
+    return () => {
+      active = false;
+    };
+  }, [visible, chatOpen]);
 
   // Grounded horizontal walking loop only (no flying, jumping, or egg mechanics)
   useEffect(() => {
@@ -240,9 +313,19 @@ export function TarsRobotChat({
           activeField,
         }),
       });
-      const json = (await res.json()) as { reply?: string; error?: string };
+      const json = (await res.json()) as {
+        reply?: string;
+        toolsUsed?: string[];
+        notes?: FarmNote[];
+        error?: string;
+      };
       if (!res.ok || !json.reply) {
         throw new Error(json.error || 'TARS could not respond right now.');
+      }
+
+      if (Array.isArray(json.notes)) {
+        setNotes(json.notes);
+        writeStorage(STORAGE_KEYS.NOTES, json.notes);
       }
 
       setMessages((prev) => [
@@ -251,6 +334,7 @@ export function TarsRobotChat({
           id: `m_${Date.now()}`,
           role: 'model',
           text: json.reply!,
+          toolsUsed: Array.isArray(json.toolsUsed) ? json.toolsUsed : [],
         },
       ]);
     } catch (err) {
@@ -260,13 +344,52 @@ export function TarsRobotChat({
     }
   };
 
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newNoteText.trim();
+    if (!trimmed || savingNote) return;
+    setSavingNote(true);
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmed }),
+      });
+      const json = (await res.json()) as { notes?: FarmNote[] };
+      if (res.ok && Array.isArray(json.notes)) {
+        setNotes(json.notes);
+        writeStorage(STORAGE_KEYS.NOTES, json.notes);
+        setNewNoteText('');
+      }
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    try {
+      const res = await fetch(`/api/notes/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      const json = (await res.json()) as { notes?: FarmNote[] };
+      if (res.ok && Array.isArray(json.notes)) {
+        setNotes(json.notes);
+        writeStorage(STORAGE_KEYS.NOTES, json.notes);
+      }
+    } catch {
+      // Ignore delete error
+    }
+  };
+
   const handleReset = () => {
     setErrorMsg(null);
     setMessages([
       {
         id: 'welcome',
         role: 'model',
-        text: `Memory reset. Ask me about ${farmData.location.name}—rainfall forecast, ${farmData.soil.type} moisture, survival odds, or your rotation plan.`,
+        text: `Thread cleared. Your ${notes.length} local farm ${
+          notes.length === 1 ? 'note is' : 'notes are'
+        } still in memory. Ask me about ${farmData.location.name}, test a rotation, or compare another valley.`,
       },
     ]);
   };
@@ -306,10 +429,10 @@ export function TarsRobotChat({
         <div
           role="dialog"
           aria-label="TARS Farm AI Assistant"
-          className="fixed bottom-24 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[400px] max-h-[75vh] bg-almanac-card border border-almanac-borderDark rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+          className="fixed bottom-24 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[420px] max-h-[78vh] bg-almanac-card border border-almanac-borderDark rounded-3xl shadow-2xl flex flex-col overflow-hidden"
         >
           {/* Header */}
-          <div className="px-4 py-3.5 bg-almanac-pill/80 border-b border-almanac-border flex items-center justify-between gap-2">
+          <div className="px-4 py-3 bg-almanac-pill/80 border-b border-almanac-border flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-xl bg-zinc-800 border border-zinc-600 p-1 shrink-0 flex items-center justify-center">
                 <TarsSvg walking={false} facing={1} />
@@ -323,12 +446,25 @@ export function TarsRobotChat({
                   </span>
                 </div>
                 <div className="text-[11px] text-almanac-muted truncate">
-                  Using live data for {farmData.location.name}
+                  Using live NASA data + agronomy tools for {farmData.location.name}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowNotesDrawer((prev) => !prev)}
+                className={`px-2 py-1 rounded-full text-[11px] font-medium border transition cursor-pointer flex items-center gap-1 ${
+                  showNotesDrawer
+                    ? 'bg-almanac-forest btn-forest text-white border-almanac-forest'
+                    : 'bg-almanac-card hover:bg-almanac-pill text-almanac-ink border-almanac-border'
+                }`}
+                title="Teach TARS local facts about your farm"
+              >
+                <StickyNote className="w-3 h-3" />
+                <span>Memory ({notes.length})</span>
+              </button>
               <button
                 type="button"
                 onClick={handleReset}
@@ -350,12 +486,74 @@ export function TarsRobotChat({
             </div>
           </div>
 
+          {/* Collapsible Local Farm Memory ("Teach TARS Your Land") */}
+          {showNotesDrawer && (
+            <div className="px-4 py-3 bg-almanac-pill/50 border-b border-almanac-border space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-almanac-ink flex items-center gap-1.5">
+                    <BookmarkCheck className="w-3.5 h-3.5 text-almanac-forest" />
+                    <span>Teach TARS Your Land</span>
+                  </div>
+                  <p className="text-[11px] text-almanac-muted leading-snug">
+                    Teach TARS facts about your land (soil quirks, frost pockets, water days).
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleAddNote} className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={newNoteText}
+                  onChange={(e) => setNewNoteText(e.target.value)}
+                  placeholder="e.g., Canal water only runs Tuesdays..."
+                  disabled={savingNote}
+                  className="flex-1 bg-white surface-soft border border-almanac-borderDark rounded-full px-3 py-1.5 text-xs text-almanac-ink"
+                />
+                <button
+                  type="submit"
+                  disabled={savingNote || !newNoteText.trim()}
+                  className="px-2.5 py-1.5 rounded-full bg-almanac-forest btn-forest text-white text-[11px] font-bold flex items-center gap-1 disabled:opacity-45 cursor-pointer shrink-0"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Save</span>
+                </button>
+              </form>
+
+              {notes.length > 0 ? (
+                <ul className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
+                  {notes.map((n) => (
+                    <li
+                      key={n.id}
+                      className="flex items-start justify-between gap-2 bg-almanac-card border border-almanac-border rounded-xl px-2.5 py-1.5 text-[11px] text-almanac-ink"
+                    >
+                      <span className="leading-snug">{n.text}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteNote(n.id)}
+                        className="text-almanac-muted hover:text-almanac-terracotta shrink-0 p-0.5 cursor-pointer"
+                        title="Remove farm note"
+                        aria-label="Remove farm note"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-[11px] text-almanac-muted italic">
+                  No local notes saved yet — add one above or tell TARS &quot;Remember...&quot; in chat.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Scrollable Message Thread */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[220px] max-h-[42vh]">
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div
                   className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed whitespace-pre-wrap ${
@@ -366,13 +564,26 @@ export function TarsRobotChat({
                 >
                   {msg.text}
                 </div>
+                {msg.role === 'model' && msg.toolsUsed && msg.toolsUsed.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1 max-w-[85%]">
+                    {msg.toolsUsed.map((toolLabel) => (
+                      <span
+                        key={toolLabel}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100/80 badge-emerald text-almanac-forest text-[10px] font-mono font-semibold"
+                      >
+                        <Wrench className="w-2.5 h-2.5" />
+                        <span>{toolLabel}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
 
             {sending && (
               <div className="flex justify-start">
                 <div className="bg-white surface-soft border border-almanac-border text-almanac-muted rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-xs font-mono">
-                  TARS is reading NASA &amp; farm telemetry...
+                  TARS is running NASA &amp; agronomy tools...
                 </div>
               </div>
             )}
@@ -432,3 +643,4 @@ export function TarsRobotChat({
     </>
   );
 }
+
