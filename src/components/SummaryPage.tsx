@@ -10,11 +10,8 @@ import {
   Leaf,
   LocateFixed,
   Pencil,
-  Plus,
   Satellite,
   Search,
-  ShieldAlert,
-  ShieldCheck,
   Sparkles,
   Sprout,
   Trash2,
@@ -26,7 +23,6 @@ import type {
   AnchorCrop,
   CustomCropId,
   CustomRotationEvaluation,
-  FarmAiAdvice,
   FarmFieldPlot,
   NasaFarmResponse,
   RotationGoal,
@@ -43,15 +39,8 @@ interface SummaryPageProps {
   savedPlans: SavedFarmPlan[];
   scanning: boolean;
   savingPlan: boolean;
+  onOpenFarmPage: () => void;
   onSelectField: (field: FarmFieldPlot) => void;
-  onCreateField: (payload: {
-    name: string;
-    areaHa: number;
-    locationQuery: string;
-    anchorCrop: AnchorCrop;
-    goal: RotationGoal;
-    plantedDate?: string;
-  }) => Promise<void>;
   onUpdateField: (
     id: string,
     payload: {
@@ -154,8 +143,8 @@ export function SummaryPage({
   savedPlans,
   scanning,
   savingPlan,
+  onOpenFarmPage,
   onSelectField,
-  onCreateField,
   onUpdateField,
   onDeleteField,
   onScanLocation,
@@ -168,7 +157,7 @@ export function SummaryPage({
 }: SummaryPageProps) {
   const isSun = theme === 'sun';
   const activeField = fields.find((f) => f.id === activeFieldId) || fields[0];
-  const { quickTip, soil, location, feeds, trajectory, radar, rainfallPredictor, survivalPredictor, rotationPlan } =
+  const { quickTip, soil, location, feeds, trajectory, radar, rainfallPredictor, rotationPlan } =
     data;
   const snap = quickTip.metricsSnapshot;
 
@@ -181,29 +170,9 @@ export function SummaryPage({
   const [plotCrop, setPlotCrop] = useState<AnchorCrop>(data.anchorCrop);
   const [plotGoal, setPlotGoal] = useState<RotationGoal>(data.goal);
   const [plotPlantedDate, setPlotPlantedDate] = useState('');
-  const [aiAdvice, setAiAdvice] = useState<FarmAiAdvice | null>(null);
-  const [loadingAiAdvice, setLoadingAiAdvice] = useState(false);
   const [savingPlot, setSavingPlot] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoadingAiAdvice(true);
-    fetch('/api/farm/ai-advice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        farmData: data,
-        activeField: fields.find((f) => f.id === activeFieldId),
-      }),
-    })
-      .then((r) => r.json())
-      .then((j: FarmAiAdvice) => {
-        if (j && j.headline) setAiAdvice(j);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingAiAdvice(false));
-  }, [data, activeFieldId, fields]);
 
   // Compact Location + Rotation state (persisted)
   const savedRotationInputs = readStorage<{
@@ -267,18 +236,6 @@ export function SummaryPage({
     runEvaluation(next);
   };
 
-  const openAddPlotForm = () => {
-    setEditingFieldId(null);
-    setConfirmDeleteId(null);
-    setPlotName('');
-    setPlotArea('50');
-    setPlotLocation(location.name);
-    setPlotCrop(data.anchorCrop);
-    setPlotGoal(data.goal);
-    setPlotPlantedDate('');
-    setShowPlotForm(true);
-  };
-
   const openEditPlotForm = (field: FarmFieldPlot) => {
     setConfirmDeleteId(null);
     setEditingFieldId(field.id);
@@ -299,7 +256,7 @@ export function SummaryPage({
 
   const handleSubmitPlotForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!plotName.trim() || savingPlot) return;
+    if (!editingFieldId || !plotName.trim() || savingPlot) return;
     setSavingPlot(true);
     try {
       const payload = {
@@ -310,11 +267,7 @@ export function SummaryPage({
         goal: plotGoal,
         plantedDate: plotPlantedDate.trim() || undefined,
       };
-      if (editingFieldId) {
-        await onUpdateField(editingFieldId, payload);
-      } else {
-        await onCreateField(payload);
-      }
+      await onUpdateField(editingFieldId, payload);
       setPlotName('');
       setPlotPlantedDate('');
       setEditingFieldId(null);
@@ -342,13 +295,6 @@ export function SummaryPage({
     quickTip.verdictTone === 'optimal'
       ? 'bg-emerald-100 badge-emerald text-almanac-forest'
       : quickTip.verdictTone === 'watch'
-        ? 'bg-amber-100 badge-amber text-amber-800'
-        : 'bg-orange-100 badge-orange text-almanac-terracotta';
-
-  const survivalBadgeColor =
-    survivalPredictor.verdictTone === 'safe'
-      ? 'bg-emerald-100 badge-emerald text-almanac-forest'
-      : survivalPredictor.verdictTone === 'caution'
         ? 'bg-amber-100 badge-amber text-amber-800'
         : 'bg-orange-100 badge-orange text-almanac-terracotta';
 
@@ -393,7 +339,8 @@ export function SummaryPage({
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2.5 lg:max-w-xl lg:justify-end">
+        {fields.length > 0 && (
+          <div className="flex flex-wrap gap-2.5 lg:max-w-xl lg:justify-end">
           {fields.map((field) => {
             const active = field.id === activeFieldId;
             const confirming = confirmDeleteId === field.id;
@@ -485,25 +432,8 @@ export function SummaryPage({
               </div>
             );
           })}
-          <button
-            type="button"
-            onClick={() => {
-              if (showPlotForm && !editingFieldId) {
-                closePlotForm();
-              } else {
-                openAddPlotForm();
-              }
-            }}
-            className={`rounded-full font-bold transition flex items-center gap-2 cursor-pointer whitespace-nowrap shadow-sm ${
-              fields.length === 0
-                ? 'px-5 py-3 text-sm bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white'
-                : 'px-3.5 py-2 text-xs bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-almanac-ink'
-            }`}
-          >
-            <Plus className={fields.length === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5 text-almanac-forest'} />
-            <span>{fields.length === 0 ? 'Add Your Farm' : 'Add Plot'}</span>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Empty Farm Invitation Banner */}
@@ -514,20 +444,19 @@ export function SummaryPage({
               Your Farm Almanac Is Empty
             </div>
             <h2 className="font-serif font-bold text-lg sm:text-xl text-almanac-ink">
-              Add your farm to save plots, or virtually test planting crops right now
+              No farm plots saved yet
             </h2>
             <p className="text-xs text-almanac-muted leading-relaxed">
-              Enter your plot name, size, location, and main crop—or scroll slightly to virtually plant 4 seasons and see what survives, saves water, or struggles.
+              Add plots and manage planting dates on My Farm. You can still build and test a 4-season rotation here.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <button
               type="button"
-              onClick={openAddPlotForm}
-              className="px-4 py-2.5 rounded-2xl bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+              onClick={onOpenFarmPage}
+              className="px-4 py-2.5 rounded-2xl bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white text-xs font-bold transition cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Add Your Farm</span>
+              Open My Farm
             </button>
             <a
               href="#virtual-planting-sandbox"
@@ -843,79 +772,6 @@ export function SummaryPage({
             </div>
           ))}
         </div>
-      </div>
-
-      {/* AI FARM ADVISOR CARD */}
-      <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-2xl bg-almanac-forest/15 text-almanac-forest">
-              <Sparkles className="w-5 h-5" />
-            </span>
-            <div>
-              <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
-                TARS AI Farm Advisor &middot; Live Satellite Intelligence
-              </span>
-              <h3 className="font-serif font-bold text-xl text-almanac-ink">
-                Personalized Recommendations for Your Farm
-              </h3>
-            </div>
-          </div>
-          <span className="px-3 py-1 rounded-full bg-emerald-100 badge-emerald text-almanac-forest text-xs font-bold font-mono">
-            {aiAdvice?.source || 'Agronomy Engine'}
-          </span>
-        </div>
-
-        {loadingAiAdvice && !aiAdvice ? (
-          <div className="text-xs font-mono text-almanac-muted py-4 animate-pulse">
-            TARS is consulting NASA weather, SoilGrids, and your farm schedule...
-          </div>
-        ) : aiAdvice ? (
-          <div className="space-y-4 text-xs">
-            <p className="text-sm font-serif font-bold text-almanac-ink bg-almanac-pill/60 border border-almanac-border rounded-2xl p-4">
-              {aiAdvice.headline}
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1.5">
-                <div className="font-bold text-almanac-ink flex items-center gap-1.5">
-                  <Sprout className="w-4 h-4 text-almanac-forest" />
-                  <span>Harvest Countdown &amp; Growth Stage</span>
-                </div>
-                <p className="text-almanac-muted leading-relaxed">{aiAdvice.harvestForecast}</p>
-              </div>
-
-              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1.5">
-                <div className="font-bold text-almanac-ink flex items-center gap-1.5">
-                  <Droplets className="w-4 h-4 text-sky-500" />
-                  <span>Precise Watering Schedule</span>
-                </div>
-                <p className="text-almanac-muted leading-relaxed">{aiAdvice.wateringAdvice}</p>
-              </div>
-            </div>
-
-            <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1.5">
-              <div className="font-bold text-almanac-ink flex items-center gap-1.5">
-                <Leaf className="w-4 h-4 text-almanac-amber" />
-                <span>Post-Harvest Preservation Tip</span>
-              </div>
-              <p className="text-almanac-muted leading-relaxed">{aiAdvice.preservationTip}</p>
-            </div>
-
-            {aiAdvice.actionTips.length > 0 && (
-              <div className="space-y-1.5 pt-1">
-                <div className="font-mono text-[11px] uppercase text-almanac-muted font-bold">Action Steps for This Week</div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {aiAdvice.actionTips.map((tip) => (
-                    <div key={tip} className="bg-almanac-pill/50 border border-almanac-border rounded-xl p-3 text-almanac-ink leading-snug">
-                      {tip}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : null}
       </div>
 
       {/* RECOMMENDED 4-SEASON PLANTING ORDER */}
@@ -1297,74 +1153,8 @@ export function SummaryPage({
         )}
       </div>
 
-      {/* PREDICTORS ROW: PLANT SURVIVAL % + UPCOMING RAINFALL */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-muted font-semibold">
-                Crop Survival Predictor &bull; {survivalPredictor.cropName}
-              </span>
-              <h3 className="font-serif font-bold text-xl text-almanac-ink mt-0.5">
-                Will Your {survivalPredictor.cropName} Survive or Die Out?
-              </h3>
-            </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${survivalBadgeColor}`}>
-              {survivalPredictor.verdictTone === 'safe' ? (
-                <ShieldCheck className="w-3.5 h-3.5" />
-              ) : (
-                <ShieldAlert className="w-3.5 h-3.5" />
-              )}
-              <span>{survivalPredictor.verdictLabel}</span>
-            </span>
-          </div>
-
-          <div className="flex items-baseline gap-6">
-            <div>
-              <div className="font-serif font-bold text-4xl text-almanac-forest tabular-nums">
-                {survivalPredictor.survivalPct}%
-              </div>
-              <div className="text-[11px] text-almanac-muted">Chance of Thriving</div>
-            </div>
-            <div className="h-10 w-px bg-almanac-border" />
-            <div>
-              <div className="font-serif font-bold text-3xl text-almanac-terracotta tabular-nums">
-                {survivalPredictor.dieOutRiskPct}%
-              </div>
-              <div className="text-[11px] text-almanac-muted">Die-Out Risk</div>
-            </div>
-          </div>
-
-          <p className="text-xs text-almanac-ink leading-relaxed bg-almanac-pill/60 border border-almanac-border rounded-2xl p-3.5">
-            {survivalPredictor.willSurviveSummary}
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {survivalPredictor.risks.map((r) => (
-              <div
-                key={r.label}
-                className="bg-white surface-soft border border-almanac-border rounded-2xl p-3 space-y-1"
-              >
-                <div className="flex items-center justify-between text-xs font-bold">
-                  <span className="text-almanac-ink">{r.label}</span>
-                  <span
-                    className={
-                      r.level === 'High'
-                        ? 'text-almanac-terracotta'
-                        : r.level === 'Medium'
-                          ? 'text-almanac-amber'
-                          : 'text-almanac-forest'
-                    }
-                  >
-                    {r.level} Risk
-                  </span>
-                </div>
-                <p className="text-[11px] text-almanac-muted leading-snug">{r.detail}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      {/* RAINFALL PREDICTOR */}
+      <div className="grid grid-cols-1 gap-6">
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1490,11 +1280,11 @@ export function SummaryPage({
             </span>
           </div>
           <div className="font-serif font-bold text-3xl sm:text-4xl text-almanac-ink">
-            {activeField?.reminderTitle || 'Add Your Farm'}
+            {activeField?.reminderTitle || 'No Farm Plot Yet'}
           </div>
           <p className="text-xs text-almanac-muted leading-relaxed">
             {activeField?.reminderNote ||
-              'Click "Add Your Farm" at the top to save your plot name, hectares, and crop focus.'}
+              'Open My Farm to create a plot, set its size and location, and choose your main crop.'}
           </p>
           <div className="text-xs font-semibold text-almanac-terracotta pt-1">
             {activeField?.reminderFoot || 'Virtual crop testing is ready anytime above'}
@@ -1626,7 +1416,11 @@ export function SummaryPage({
               </h2>
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-100 badge-emerald text-almanac-forest text-[11px] font-mono font-bold">
-              {feeds.powerClimatology === 'Live' ? 'NASA Data Live' : 'NASA Archive'}
+              {feeds.climateSource === 'NASA POWER climatology'
+                ? 'NASA POWER climate'
+                : feeds.climateSource === 'Open-Meteo historical reanalysis'
+                  ? 'Open-Meteo archive'
+                  : 'Regional estimate'}
             </span>
           </div>
 

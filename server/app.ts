@@ -90,6 +90,7 @@ export function createApiApp() {
         telemetry: nasaData.telemetry,
         recentDaily: nasaData.recentDaily,
         forecastDaily: nasaData.forecastDaily,
+        climateSource: nasaData.feeds.climateSource,
         goal,
         anchorCrop,
         farmName,
@@ -144,7 +145,7 @@ export function createApiApp() {
     }
   });
 
-  // Evaluate a farmer's custom 4-season crop rotation plan against real NASA telemetry + country market economics
+  // Evaluate a custom rotation against available environmental data and country market economics
   app.post('/api/rotations/evaluate', async (req, res) => {
     try {
       const body = req.body as {

@@ -55,7 +55,11 @@ export interface RainfallPredictor {
   rainyDaysNext14: number;
   verdictLabel: string;
   plainSummary: string;
-  source: 'Open-Meteo Forecast + NASA POWER' | 'NASA POWER 30-Yr Estimate';
+  source:
+    | 'Open-Meteo Forecast'
+    | 'NASA POWER climatology'
+    | 'Open-Meteo historical reanalysis'
+    | 'Regional seasonal estimate';
   dailyForecast: ForecastDay[];
 }
 
@@ -99,7 +103,7 @@ export interface SoilProfile {
   organicMatterPct: number;
   clayPct: number;
   sandPct: number;
-  source: 'ISRIC SoilGrids Live' | 'Regional Soil Baseline';
+  source: 'ISRIC SoilGrids (modeled)' | 'Regional Soil Baseline';
 }
 
 export interface RotationSeasonStep {
@@ -147,18 +151,36 @@ export interface DatasetFeedProof {
   id: string;
   name: string;
   provider: string;
-  status: 'Live' | 'Fallback';
-  endpointUrl: string;
+  status:
+    | 'Current forecast'
+    | 'Historical data'
+    | 'Climatology'
+    | 'Modeled'
+    | 'Estimated'
+    | 'Fallback'
+    | 'Unavailable';
+  endpointUrl?: string;
   sampleReading: string;
   lastCheckedIso: string;
 }
 
 export interface DatasetFeedStatus {
-  powerClimatology: 'Live' | 'Cached Baseline';
-  powerDaily: 'Live' | 'Unavailable';
-  modisNdvi: 'Live (ORNL MOD13Q1)' | 'Live (HLS 10–30m)' | 'NASA Agro-Model';
-  soilGrids: 'Live (ISRIC v2.0)' | 'Regional Baseline';
-  forecast: 'Live' | 'NASA Climatology';
+  climateSource:
+    | 'NASA POWER climatology'
+    | 'Open-Meteo historical reanalysis'
+    | 'Regional seasonal estimate';
+  powerDaily: 'NASA POWER daily' | 'Unavailable';
+  modisNdvi:
+    | 'NASA MODIS observation'
+    | 'Estimated from NASA POWER'
+    | 'Estimated from Open-Meteo reanalysis'
+    | 'Regional vegetation estimate';
+  soilGrids: 'ISRIC modeled soil map' | 'Regional baseline';
+  forecast:
+    | 'Open-Meteo forecast'
+    | 'NASA POWER climatology'
+    | 'Open-Meteo historical reanalysis'
+    | 'Regional seasonal estimate';
   lastUpdatedIso: string;
   proofs: DatasetFeedProof[];
 }

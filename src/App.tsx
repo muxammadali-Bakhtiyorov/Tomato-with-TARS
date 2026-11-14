@@ -70,7 +70,7 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
     rainyDaysNext14: 2,
     verdictLabel: 'Syncing Forecast...',
     plainSummary: 'Checking 14-day rainfall outlook and NASA satellite soil moisture...',
-    source: 'Open-Meteo Forecast + NASA POWER',
+    source: 'Regional seasonal estimate',
     dailyForecast: [],
   },
   survivalPredictor: {
@@ -194,11 +194,11 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
     regionalAvg: [64, 58, 60, 55, 63],
   },
   feeds: {
-    powerClimatology: 'Cached Baseline',
+    climateSource: 'Regional seasonal estimate',
     powerDaily: 'Unavailable',
-    modisNdvi: 'NASA Agro-Model',
-    soilGrids: 'Regional Baseline',
-    forecast: 'NASA Climatology',
+    modisNdvi: 'Regional vegetation estimate',
+    soilGrids: 'Regional baseline',
+    forecast: 'NASA POWER climatology',
     lastUpdatedIso: new Date().toISOString(),
     proofs: [],
   },
@@ -546,8 +546,7 @@ export default function App() {
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      showToast('Could not save farm plot');
-      return;
+      throw new Error('Could not save the farm plot. Please check the details and try again.');
     }
     const json = (await res.json()) as { field: FarmFieldPlot; fields: FarmFieldPlot[] };
     setFields(json.fields);
@@ -789,6 +788,18 @@ export default function App() {
                     showModal: true,
                   });
                 }}
+                onLocateMe={(lat, lon) => {
+                  const af = fields.find((f) => f.id === activeFieldId);
+                  return fetchTelemetry({
+                    q: 'Current device location',
+                    lat,
+                    lon,
+                    farmName: af?.name,
+                    areaHa: af?.areaHa,
+                    plantedDate: af?.plantedDate,
+                    showModal: true,
+                  });
+                }}
                 onSaveCurrentPlan={handleSaveCurrentPlan}
                 onDeletePlan={handleDeletePlan}
                 onLoadSavedPlan={handleLoadSavedPlan}
@@ -805,8 +816,11 @@ export default function App() {
                 savedPlans={savedPlans}
                 scanning={scanning}
                 savingPlan={savingPlan}
+                onOpenFarmPage={() => {
+                  setActivePage('farm');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
                 onSelectField={handleSelectField}
-                onCreateField={handleCreateField}
                 onUpdateField={handleUpdateField}
                 onDeleteField={handleDeleteField}
                 onScanLocation={(query) => {

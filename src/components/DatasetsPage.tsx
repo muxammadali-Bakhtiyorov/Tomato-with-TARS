@@ -7,31 +7,38 @@ interface DatasetsPageProps {
 
 export function DatasetsPage({ data }: DatasetsPageProps) {
   const { feeds, location } = data;
-  const liveProofs = feeds.proofs.filter((proof) => proof.status === 'Live');
+  const statusStyles = {
+    'Current forecast': 'bg-emerald-100 badge-emerald text-almanac-forest',
+    'Historical data': 'bg-sky-100 text-sky-800',
+    Climatology: 'bg-sky-100 text-sky-800',
+    Modeled: 'bg-amber-100 text-amber-900',
+    Estimated: 'bg-amber-100 text-amber-900',
+    Fallback: 'bg-rose-100 text-rose-800',
+    Unavailable: 'bg-rose-100 text-rose-800',
+  } satisfies Record<(typeof data.feeds.proofs)[number]['status'], string>;
 
   return (
     <section className="space-y-8">
       <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-8 shadow-sm space-y-2">
         <span className="text-xs font-mono uppercase tracking-wider text-almanac-forest font-bold">
-          Live Data Verification &bull; {location.name} ({location.coordsLabel})
+          Data Provenance &bull; {location.name} ({location.coordsLabel})
         </span>
         <h2 className="font-serif font-bold text-2xl sm:text-3xl text-almanac-ink">
-          Live NASA &amp; Weather Feeds Used Right Now
+          Data sources, freshness &amp; fallbacks
         </h2>
         <p className="text-sm text-almanac-muted max-w-3xl leading-relaxed">
-          Showing only the live datasets currently streaming for your farm location. Click any link below to inspect the raw JSON directly from NASA and public weather servers—zero API keys required.
+          NASA POWER and NASA MODIS are the primary sources for climate and vegetation data. POWER climatology is a long-term gridded estimate, not a live farm sensor; forecasts and modeled soil maps come from other providers. Each row says what data was actually returned.
         </p>
       </div>
 
-      {/* Live Endpoint Proof Table */}
       <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <h3 className="font-serif font-bold text-lg text-almanac-ink">
-              Active Dataset Verification Log
+              Provider status
             </h3>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 badge-emerald text-almanac-forest text-[11px] font-mono font-bold">
-              {liveProofs.length} Live
+            <span className="px-2.5 py-0.5 rounded-full bg-almanac-pill border border-almanac-border text-almanac-muted text-[11px] font-mono font-bold">
+              {feeds.proofs.length} checks
             </span>
           </div>
           <span className="text-[11px] font-mono text-almanac-muted">
@@ -40,20 +47,20 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
         </div>
 
         <div className="space-y-3">
-          {liveProofs.length === 0 ? (
+          {feeds.proofs.length === 0 ? (
             <div className="bg-white surface-soft border border-dashed border-almanac-border rounded-2xl p-6 text-center text-xs text-almanac-muted">
-              Waiting for live NASA &amp; weather feeds to respond for {location.name}...
+              No provider checks were returned. The dashboard may be showing its built-in fallback data for {location.name}.
             </div>
           ) : (
-            liveProofs.map((proof) => (
+            feeds.proofs.map((proof) => (
               <div
                 key={proof.id}
                 className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3"
               >
                 <div className="space-y-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 badge-emerald text-almanac-forest">
-                      ● LIVE
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${statusStyles[proof.status]}`}>
+                      {proof.status}
                     </span>
                     <span className="font-serif font-bold text-sm text-almanac-ink">{proof.name}</span>
                     <span className="text-[11px] text-almanac-muted">&middot; {proof.provider}</span>
@@ -61,26 +68,24 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
                   <div className="text-xs text-almanac-ink font-medium">{proof.sampleReading}</div>
                 </div>
 
-                <a
-                  href={proof.endpointUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-[11px] font-mono text-almanac-ink transition whitespace-nowrap self-start lg:self-auto"
-                >
-                  <span>Inspect Raw JSON</span>
-                  <ExternalLink className="w-3 h-3 text-almanac-forest" />
-                </a>
+                {proof.endpointUrl && (
+                  <a
+                    href={proof.endpointUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-[11px] font-mono text-almanac-ink transition whitespace-nowrap self-start lg:self-auto"
+                  >
+                    <span>Inspect source</span>
+                    <ExternalLink className="w-3 h-3 text-almanac-forest" />
+                  </a>
+                )}
               </div>
             ))
           )}
         </div>
 
         <div className="pt-3 border-t border-almanac-border text-xs text-almanac-muted leading-relaxed">
-          <strong className="text-almanac-ink">Data Fusion Note:</strong> TARS harmonizes coarse-grid{' '}
-          <strong className="text-almanac-ink">SMAP</strong> soil moisture and{' '}
-          <strong className="text-almanac-ink">GPM/IMERG</strong> rainfall with 10m–30m{' '}
-          <strong className="text-almanac-ink">HLS</strong> vegetation passes and{' '}
-          <strong className="text-almanac-ink">NASA POWER</strong> temperatures onto one monthly and daily farm timeline, while keeping local farmer judgment central for micro-climate checks.
+          <strong className="text-almanac-ink">Data notes:</strong> NASA POWER supplies gridded climate values and modeled soil wetness when available; Open-Meteo historical reanalysis is used only if POWER fails. NASA MODIS pixel values replace the seasonal NDVI/EVI estimate when available. Open-Meteo also supplies the 14-day forecast because POWER is not a forecast feed. ISRIC SoilGrids is a modeled regional soil map, not a lab test. Catalog entries alone are not treated as measurements.
         </div>
       </div>
     </section>
