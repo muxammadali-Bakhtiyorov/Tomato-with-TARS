@@ -232,14 +232,14 @@ TOOL RULES:
 
       extendedTables = `
 
-12-Month NASA Climatology Profile:
+12-Month Environmental Profile (${feeds.climateSource}):
 ${monthlyTable}
 
-Recent 7 Daily NASA POWER Granules:
-${recentTable || 'Using monthly NASA baseline'}
+Recent NASA POWER Daily Data:
+${recentTable || 'No recent NASA POWER daily records were returned.'}
 
-Active Live NASA & Weather Feeds:
-${liveSources || 'NASA POWER Agroclimatology'}`;
+Dataset Check Results:
+${liveSources || 'No provider data checks were returned'}`;
     }
 
     const plotSummary = activeField
@@ -251,9 +251,9 @@ ${liveSources || 'NASA POWER Agroclimatology'}`;
 WHAT IS ON THE FARMER'S SCREEN RIGHT NOW (use naturally, never echo like a database):
 ${plotSummary}
 They are viewing ${location.name} (${location.coordsLabel}), which sits in a ${location.climateZone} climate zone. Their current focus crop is ${anchorCrop}, with the main goal to "${goal}".
-The local soil is ${soil.type} with a ${soil.phNote.toLowerCase()} pH of ${soil.ph} and ${soil.organicMatterPct}% organic matter (${soil.clayPct}% clay, ${soil.sandPct}% sand).
+Data sources: climate profile is ${feeds.climateSource}; recent daily data is ${feeds.powerDaily}; vegetation is ${feeds.modisNdvi}; soil is ${soil.source}. NASA POWER and Open-Meteo weather/soil-moisture values are gridded model or reanalysis data, not on-farm sensor readings. When MODIS is unavailable, the vegetation index is an estimate. Do not describe estimates or gridded data as direct field measurements.
 
-Right now, satellite observations show root-zone moisture around ${snap.currentRootMoisturePct}%, ${snap.recent14dRainMm} mm of rain over the past 14 days, ground temperature near ${snap.currentSkinTempC}°C, and plant greenness (NDVI) at ${snap.currentNdvi.toFixed(2)}. On average this region receives ${snap.annualRainMm} mm of rain per year; this month typically sees ${snap.currentMonthRainMm} mm of rain against ${snap.currentMonthDemandMm} mm of crop water need (deficit ~${snap.currentMonthDeficitMm} mm). Best outdoor planting begins around ${snap.bestPlantingMonth} (nights ~${snap.bestPlantingNightTempC}°C), while summer peaks near ${snap.peakSummerTempC}°C in ${snap.peakSummerMonth}.
+Current model and weather data indicate root-zone wetness around ${snap.currentRootMoisturePct}%, ${snap.recent14dRainMm} mm of recent rain, surface-temperature estimate near ${snap.currentSkinTempC}°C, and plant greenness (NDVI) at ${snap.currentNdvi.toFixed(2)}. On average this region receives ${snap.annualRainMm} mm of rain per year; this month typically sees ${snap.currentMonthRainMm} mm of rain against ${snap.currentMonthDemandMm} mm of estimated crop water need (deficit ~${snap.currentMonthDeficitMm} mm). Best outdoor planting begins around ${snap.bestPlantingMonth} (nights ~${snap.bestPlantingNightTempC}°C), while summer peaks near ${snap.peakSummerTempC}°C in ${snap.peakSummerMonth}.
 
 The site's Quick Summary advises: "${quickTip.headline}" (${quickTip.verdictBadge}, saving roughly ${quickTip.estimatedWaterSavingsPct}% water).
 Estimated crop survival is ${survivalPredictor.survivalPct}% (die-out risk ${survivalPredictor.dieOutRiskPct}%, rated "${survivalPredictor.verdictLabel}"), shaped by these risk checks:
@@ -326,6 +326,7 @@ async function executeTarsTool(
       telemetry: nasaData.telemetry,
       recentDaily: nasaData.recentDaily,
       forecastDaily: nasaData.forecastDaily,
+      climateSource: nasaData.feeds.climateSource,
       goal: currentFarm?.goal ?? 'water',
       anchorCrop: currentFarm?.anchorCrop ?? 'tomatoes',
     });
@@ -572,13 +573,13 @@ export async function generateFarmAiAdvice(params: {
       }
     );
 
-    const prompt = `Analyze this farmer's real plot and return practical, data-backed advice in TARS's warm cute-robot voice:
+    const prompt = `Use the available farm data to return practical advice in TARS's warm cute-robot voice:
 - Farm: ${farmName} in ${farmData.location.name} (${farmData.location.climateZone})
 - Planted crop: ${cropName}
 - Farmer's planting date: ${planted}
 - Maturity window: ${playbook ? `${playbook.daysToMaturityMin}-${playbook.daysToMaturityMax} days` : '75-90 days'}
 - Soil: ${farmData.soil.type}, pH ${farmData.soil.ph}, organic matter ${farmData.soil.organicMatterPct}%
-- Live NASA telemetry: root moisture ${snap.currentRootMoisturePct}%, 14d rain ${snap.recent14dRainMm}mm, skin temp ${snap.currentSkinTempC}°C, NDVI ${snap.currentNdvi.toFixed(2)}
+- Data source: ${farmData.feeds.climateSource}; root-moisture estimate ${snap.currentRootMoisturePct}%, recent rain ${snap.recent14dRainMm}mm, surface-temperature estimate ${snap.currentSkinTempC}°C, NDVI ${snap.currentNdvi.toFixed(2)} (${farmData.feeds.modisNdvi})
 - 7-day / 14-day rain forecast: ${rain.next7DaysMm}mm / ${rain.next14DaysMm}mm (${rain.rainChancePct}% chance)
 - Survival check for ${cropName}: ${farmData.survivalPredictor.survivalPct}% survival (${farmData.survivalPredictor.risks.map((r) => `${r.label}: ${r.level} - ${r.detail}`).join('; ')})
 - Saved farmer notes: ${notes.length > 0 ? notes.map((n) => n.text).join('; ') : 'None'}

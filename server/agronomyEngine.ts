@@ -3,6 +3,7 @@ import type {
   CropPlaybook,
   CustomCropId,
   CustomRotationEvaluation,
+  DatasetFeedStatus,
   ForecastDay,
   MonthlyTelemetry,
   QuickActionTip,
@@ -401,7 +402,8 @@ export const CUSTOM_CROPS: Record<CustomCropId, CustomCropMeta> = {
 function buildRainfallPredictor(
   location: ResolvedLocation,
   telemetry: MonthlyTelemetry,
-  forecastDaily: ForecastDay[]
+  forecastDaily: ForecastDay[],
+  climateSource: 'NASA POWER climatology' | 'Open-Meteo historical reanalysis' | 'Regional seasonal estimate'
 ): RainfallPredictor {
   const curMonthIdx = new Date().getUTCMonth();
 
@@ -430,12 +432,11 @@ function buildRainfallPredictor(
       rainyDaysNext14,
       verdictLabel,
       plainSummary,
-      source: 'Open-Meteo Forecast + NASA POWER',
+      source: 'Open-Meteo Forecast',
       dailyForecast: next14,
     };
   }
 
-  // Fallback rough estimate from NASA POWER monthly climatology
   const monthRain = telemetry.rainfall[curMonthIdx];
   const next7DaysMm = Math.round((monthRain / 4.3) * 10) / 10;
   const next14DaysMm = Math.round((monthRain / 2.15) * 10) / 10;
@@ -447,8 +448,8 @@ function buildRainfallPredictor(
     rainChancePct,
     rainyDaysNext14: Math.round((monthRain / 18)),
     verdictLabel: next14DaysMm >= 18 ? 'Seasonal Rain Likely' : 'Mostly Dry Stretch',
-    plainSummary: `Based on NASA 25-year rainfall records, expect roughly ${next14DaysMm} mm of rain over the next 2 weeks (~${rainChancePct}% chance).`,
-    source: 'NASA POWER 30-Yr Estimate',
+    plainSummary: `No 14-day forecast is available. ${climateSource} suggests roughly ${next14DaysMm} mm of typical rain over 2 weeks; the chance estimate is seasonal, not a forecast.`,
+    source: climateSource,
     dailyForecast: [],
   };
 }
@@ -741,6 +742,7 @@ export function buildAgronomicPlan(params: {
   telemetry: MonthlyTelemetry;
   recentDaily: RecentDailyObservation[];
   forecastDaily: ForecastDay[];
+  climateSource: DatasetFeedStatus['climateSource'];
   goal: RotationGoal;
   anchorCrop: AnchorCrop;
   farmName?: string;
@@ -761,6 +763,7 @@ export function buildAgronomicPlan(params: {
     telemetry,
     recentDaily,
     forecastDaily,
+    climateSource,
     goal,
     anchorCrop,
     farmName,
@@ -799,7 +802,12 @@ export function buildAgronomicPlan(params: {
   const curMonthDemand = telemetry.waterDemand[curMonthIdx];
   const currentMonthDeficitMm = Math.max(0, curMonthDemand - curMonthRain);
 
-  const rainfallPredictor = buildRainfallPredictor(location, telemetry, forecastDaily);
+  const rainfallPredictor = buildRainfallPredictor(
+    location,
+    telemetry,
+    forecastDaily,
+    climateSource
+  );
   const survivalPredictor = buildSurvivalPredictor({
     anchorCrop,
     currentRootMoisturePct,

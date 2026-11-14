@@ -90,6 +90,24 @@ async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response
   }
 }
 
+async function fetchJsonWithTimeout<T>(
+  url: string,
+  timeoutMs: number
+): Promise<{ response: Response; data: T | null }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json', 'User-Agent': 'TomatoesWithTARS/1.0' },
+    });
+    const data = response.ok ? ((await response.json()) as T) : null;
+    return { response, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function resolveLocation(
   query?: string,
   latParam?: number,
@@ -211,6 +229,7 @@ const CACHE_TTL_MS = 30 * 60 * 1000;
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const POWER_MKEYS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const CLIMATOLOGY_DAYS_PER_MONTH = [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 function baselineTelemetry(lat: number): MonthlyTelemetry {
   const southern = lat < 0;
@@ -240,10 +259,22 @@ function isValidPowerNum(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v) && v > -900;
 }
 
+function estimatedVegetationIndices(
+  tempMax: number[],
+  rootMoisture: number[]
+): { ndvi: number[]; evi: number[] } {
+  const ndvi = tempMax.map((temperature, idx) => {
+    const thermalFit = Math.max(0, Math.min(1, (temperature - 5) / 23));
+    const moistureFit = Math.max(0.28, Math.min(1, rootMoisture[idx] / 32));
+    return Math.round((0.26 + 0.61 * thermalFit * moistureFit) * 100) / 100;
+  });
+  return { ndvi, evi: ndvi.map((value) => Math.round(value * 0.84 * 100) / 100) };
+}
+
 async function fetchPowerClimatology(
   lat: number,
   lon: number
-): Promise<{ telemetry: MonthlyTelemetry; url: string } | null> {
+): Promise<{ telemetry: MonthlyTelemetry; url: string; period: string } | null> {
   const url =
     `https://power.larc.nasa.gov/api/temporal/climatology/point` +
     `?parameters=PRECTOTCORR,T2M,T2M_RANGE,TS,GWETROOT,GWETTOP,ALLSKY_SFC_SW_DWN` +
@@ -253,48 +284,54 @@ async function fetchPowerClimatology(
   if (!res.ok) return null;
   const json = (await res.json()) as {
     properties?: { parameter?: Record<string, Record<string, number>> };
+    messages?: string[] | string;
   };
   const p = json.properties?.parameter;
   if (!p) return null;
 
+  const requiredParameters = [
+    'PRECTOTCORR',
+    'T2M',
+    'T2M_RANGE',
+    'TS',
+    'GWETROOT',
+    'GWETTOP',
+    'ALLSKY_SFC_SW_DWN',
+  ];
+  const hasCompleteMonthlyData = requiredParameters.every((parameter) =>
+    POWER_MKEYS.every((month) => isValidPowerNum(p[parameter]?.[month]))
+  );
+  if (!hasCompleteMonthlyData) return null;
+
   const rootMoisture = POWER_MKEYS.map((k) => {
-    const val = isValidPowerNum(p.GWETROOT?.[k]) ? p.GWETROOT[k] : 0.52;
-    return Math.max(8, Math.min(62, Math.round(val * 58)));
+    return Math.max(0, Math.min(100, Math.round(p.GWETROOT[k] * 100)));
   });
   const topMoisture = POWER_MKEYS.map((k) => {
-    const val = isValidPowerNum(p.GWETTOP?.[k]) ? p.GWETTOP[k] : 0.44;
-    return Math.max(6, Math.min(58, Math.round(val * 54)));
+    return Math.max(0, Math.min(100, Math.round(p.GWETTOP[k] * 100)));
   });
-  const tempMax = POWER_MKEYS.map((k) => {
-    const mean = isValidPowerNum(p.T2M?.[k]) ? p.T2M[k] : 16;
-    const range = isValidPowerNum(p.T2M_RANGE?.[k]) ? p.T2M_RANGE[k] : 10;
-    return Math.round((mean + range / 2) * 10) / 10;
-  });
-  const tempMin = POWER_MKEYS.map((k) => {
-    const mean = isValidPowerNum(p.T2M?.[k]) ? p.T2M[k] : 16;
-    const range = isValidPowerNum(p.T2M_RANGE?.[k]) ? p.T2M_RANGE[k] : 10;
-    return Math.round((mean - range / 2) * 10) / 10;
-  });
-  const landSkinTemp = POWER_MKEYS.map((k, i) =>
-    Math.round((isValidPowerNum(p.TS?.[k]) ? p.TS[k] : tempMax[i] - 2) * 10) / 10
+  const tempMax = POWER_MKEYS.map((k) =>
+    Math.round((p.T2M[k] + p.T2M_RANGE[k] / 2) * 10) / 10
   );
-  const rainfall = POWER_MKEYS.map((k) =>
-    Math.max(0, Math.round((isValidPowerNum(p.PRECTOTCORR?.[k]) ? p.PRECTOTCORR[k] : 1.2) * 30.4))
+  const tempMin = POWER_MKEYS.map((k) =>
+    Math.round((p.T2M[k] - p.T2M_RANGE[k] / 2) * 10) / 10
+  );
+  const landSkinTemp = POWER_MKEYS.map((k, i) =>
+    Math.round(p.TS[k] * 10) / 10
+  );
+  const rainfall = POWER_MKEYS.map((k, idx) =>
+    Math.max(0, Math.round(p.PRECTOTCORR[k] * CLIMATOLOGY_DAYS_PER_MONTH[idx]))
   );
   const waterDemand = POWER_MKEYS.map((k, idx) => {
-    const rad = isValidPowerNum(p.ALLSKY_SFC_SW_DWN?.[k]) ? p.ALLSKY_SFC_SW_DWN[k] : 16;
-    const t = tempMax[idx];
-    return Math.max(18, Math.round(rad * 4.2 + Math.max(0, t - 5) * 2.1));
+    const rad = p.ALLSKY_SFC_SW_DWN[k];
+    return Math.max(18, Math.round(rad * 4.2 + Math.max(0, tempMax[idx] - 5) * 2.1));
   });
-  const ndvi = POWER_MKEYS.map((_, idx) => {
-    const thermalFit = Math.max(0, Math.min(1, (tempMax[idx] - 5) / 23));
-    const moistureFit = Math.max(0.28, Math.min(1, rootMoisture[idx] / 32));
-    return Math.round((0.26 + 0.61 * thermalFit * moistureFit) * 100) / 100;
-  });
-  const evi = ndvi.map((v) => Math.round(v * 0.84 * 100) / 100);
+  const { ndvi, evi } = estimatedVegetationIndices(tempMax, rootMoisture);
 
   return {
     url,
+    period:
+      (Array.isArray(json.messages) ? json.messages[0] : json.messages) ||
+      'NASA POWER climatology period',
     telemetry: {
       months: MONTHS_SHORT,
       rootMoisture,
@@ -315,8 +352,7 @@ async function fetchPowerRecentDaily(
   lon: number
 ): Promise<{ rows: RecentDailyObservation[]; url: string }> {
   const now = new Date();
-  const safeNow = now.getUTCFullYear() > 2026 ? new Date('2026-10-01T00:00:00Z') : now;
-  const end = new Date(safeNow.getTime() - 5 * 86400_000);
+  const end = new Date(now.getTime() - 5 * 86400_000);
   const start = new Date(end.getTime() - 15 * 86400_000);
 
   const url =
@@ -343,15 +379,26 @@ async function fetchPowerRecentDaily(
       const rain = p.PRECTOTCORR?.[d];
       const gwRoot = p.GWETROOT?.[d];
       const gwTop = p.GWETTOP?.[d];
-      if (!isValidPowerNum(tmax) && !isValidPowerNum(rain)) continue;
+      if (
+        ![
+          tmax,
+          tmin,
+          ts,
+          rain,
+          gwRoot,
+          gwTop,
+        ].every(isValidPowerNum)
+      ) {
+        continue;
+      }
       rows.push({
         date: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`,
-        rainMm: isValidPowerNum(rain) ? Math.round(rain * 10) / 10 : 0,
-        rootMoisturePct: isValidPowerNum(gwRoot) ? Math.round(gwRoot * 58) : 30,
-        topMoisturePct: isValidPowerNum(gwTop) ? Math.round(gwTop * 54) : 24,
-        tempMaxC: isValidPowerNum(tmax) ? Math.round(tmax * 10) / 10 : 22,
-        tempMinC: isValidPowerNum(tmin) ? Math.round(tmin * 10) / 10 : 10,
-        skinTempC: isValidPowerNum(ts) ? Math.round(ts * 10) / 10 : 18,
+        rainMm: Math.round(rain * 10) / 10,
+        rootMoisturePct: Math.max(0, Math.min(100, Math.round(gwRoot * 100))),
+        topMoisturePct: Math.max(0, Math.min(100, Math.round(gwTop * 100))),
+        tempMaxC: Math.round(tmax * 10) / 10,
+        tempMinC: Math.round(tmin * 10) / 10,
+        skinTempC: Math.round(ts * 10) / 10,
       });
     }
     return { rows, url };
@@ -385,43 +432,265 @@ async function fetchUpcomingForecast(
     const d = json.daily;
     if (!d?.time || d.time.length === 0) return { days: [], url };
 
-    const days: ForecastDay[] = d.time.map((date, idx) => ({
-      date,
-      rainMm: Math.round((d.precipitation_sum?.[idx] ?? 0) * 10) / 10,
-      rainChancePct: Math.round(d.precipitation_probability_max?.[idx] ?? 0),
-      tempMaxC: Math.round((d.temperature_2m_max?.[idx] ?? 20) * 10) / 10,
-      tempMinC: Math.round((d.temperature_2m_min?.[idx] ?? 8) * 10) / 10,
-    }));
+    const days: ForecastDay[] = [];
+    for (const [idx, date] of d.time.entries()) {
+      const rain = d.precipitation_sum?.[idx];
+      const rainChance = d.precipitation_probability_max?.[idx];
+      const tempMax = d.temperature_2m_max?.[idx];
+      const tempMin = d.temperature_2m_min?.[idx];
+      if (
+        typeof rain !== 'number' ||
+        typeof rainChance !== 'number' ||
+        typeof tempMax !== 'number' ||
+        typeof tempMin !== 'number' ||
+        ![rain, rainChance, tempMax, tempMin].every(Number.isFinite)
+      ) {
+        continue;
+      }
+      days.push({
+        date,
+        rainMm: Math.round(rain * 10) / 10,
+        rainChancePct: Math.round(rainChance),
+        tempMaxC: Math.round(tempMax * 10) / 10,
+        tempMinC: Math.round(tempMin * 10) / 10,
+      });
+    }
     return { days, url };
   } catch {
     return { days: [], url };
   }
 }
 
+async function fetchHistoricalWeather(
+  lat: number,
+  lon: number
+): Promise<{ telemetry: MonthlyTelemetry; url: string; period: string } | null> {
+  const endYear = new Date().getUTCFullYear() - 1;
+  const startYear = endYear - 2;
+  const startDate = `${startYear}-01-01`;
+  const endDate = `${endYear}-12-31`;
+  const url =
+    `https://archive-api.open-meteo.com/v1/archive` +
+    `?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+    `&start_date=${startDate}&end_date=${endDate}` +
+    `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,shortwave_radiation_sum` +
+    `&hourly=soil_moisture_0_to_7cm,soil_moisture_7_to_28cm&timezone=UTC`;
+
+  try {
+    const res = await fetchWithTimeout(url, 12000);
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      daily?: {
+        time?: string[];
+        temperature_2m_max?: Array<number | null>;
+        temperature_2m_min?: Array<number | null>;
+        precipitation_sum?: Array<number | null>;
+        shortwave_radiation_sum?: Array<number | null>;
+      };
+      hourly?: {
+        time?: string[];
+        soil_moisture_0_to_7cm?: Array<number | null>;
+        soil_moisture_7_to_28cm?: Array<number | null>;
+      };
+    };
+    const daily = json.daily;
+    const hourly = json.hourly;
+    if (!daily?.time?.length || !hourly?.time?.length) return null;
+
+    type MonthAggregate = {
+      month: number;
+      days: number;
+      precipitation: number;
+      maxTemp: number;
+      minTemp: number;
+      solar: number;
+      topMoisture: number;
+      topMoistureCount: number;
+      rootMoisture: number;
+      rootMoistureCount: number;
+    };
+    const byYearMonth = new Map<string, MonthAggregate>();
+    const getAggregate = (date: string): MonthAggregate => {
+      const key = date.slice(0, 7);
+      let aggregate = byYearMonth.get(key);
+      if (!aggregate) {
+        aggregate = {
+          month: Number(date.slice(5, 7)) - 1,
+          days: 0,
+          precipitation: 0,
+          maxTemp: 0,
+          minTemp: 0,
+          solar: 0,
+          topMoisture: 0,
+          topMoistureCount: 0,
+          rootMoisture: 0,
+          rootMoistureCount: 0,
+        };
+        byYearMonth.set(key, aggregate);
+      }
+      return aggregate;
+    };
+    const isFiniteNumber = (value: unknown): value is number =>
+      typeof value === 'number' && Number.isFinite(value);
+
+    for (const [idx, date] of daily.time.entries()) {
+      const max = daily.temperature_2m_max?.[idx];
+      const min = daily.temperature_2m_min?.[idx];
+      const rain = daily.precipitation_sum?.[idx];
+      const solar = daily.shortwave_radiation_sum?.[idx];
+      if (
+        typeof max !== 'number' ||
+        typeof min !== 'number' ||
+        typeof rain !== 'number' ||
+        typeof solar !== 'number' ||
+        ![max, min, rain, solar].every(Number.isFinite)
+      ) {
+        continue;
+      }
+      const aggregate = getAggregate(date);
+      aggregate.days += 1;
+      aggregate.maxTemp += max;
+      aggregate.minTemp += min;
+      aggregate.precipitation += rain;
+      aggregate.solar += solar;
+    }
+
+    for (const [idx, time] of hourly.time.entries()) {
+      const top = hourly.soil_moisture_0_to_7cm?.[idx];
+      const root = hourly.soil_moisture_7_to_28cm?.[idx];
+      const aggregate = getAggregate(time);
+      if (isFiniteNumber(top) && top >= 0 && top <= 1) {
+        aggregate.topMoisture += top;
+        aggregate.topMoistureCount += 1;
+      }
+      if (isFiniteNumber(root) && root >= 0 && root <= 1) {
+        aggregate.rootMoisture += root;
+        aggregate.rootMoistureCount += 1;
+      }
+    }
+
+    const monthGroups = POWER_MKEYS.map((_, month) =>
+      Array.from(byYearMonth.values()).filter(
+        (aggregate) =>
+          aggregate.month === month &&
+          aggregate.days >= 25 &&
+          aggregate.topMoistureCount > 0 &&
+          aggregate.rootMoistureCount > 0
+      )
+    );
+    if (monthGroups.some((group) => group.length < 2)) return null;
+    const mean = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+    const tempMax = monthGroups.map((group) =>
+      Math.round(mean(group.map((item) => item.maxTemp / item.days)) * 10) / 10
+    );
+    const tempMin = monthGroups.map((group) =>
+      Math.round(mean(group.map((item) => item.minTemp / item.days)) * 10) / 10
+    );
+    const rootMoisture = monthGroups.map((group) =>
+      Math.round(mean(group.map((item) => (item.rootMoisture / item.rootMoistureCount) * 100)))
+    );
+    const topMoisture = monthGroups.map((group) =>
+      Math.round(mean(group.map((item) => (item.topMoisture / item.topMoistureCount) * 100)))
+    );
+    const rainfall = monthGroups.map((group) =>
+      Math.round(mean(group.map((item) => item.precipitation)))
+    );
+    const landSkinTemp = tempMax.map((max, idx) =>
+      Math.round(((max + tempMin[idx]) / 2) * 10) / 10
+    );
+    const waterDemand = monthGroups.map((group, idx) => {
+      const dailySolarKwh = mean(group.map((item) => item.solar / item.days)) / 3.6;
+      return Math.max(18, Math.round(dailySolarKwh * 4.2 + Math.max(0, tempMax[idx] - 5) * 2.1));
+    });
+    const { ndvi, evi } = estimatedVegetationIndices(tempMax, rootMoisture);
+
+    return {
+      url,
+      period: `${startDate} through ${endDate}`,
+      telemetry: {
+        months: MONTHS_SHORT,
+        rootMoisture,
+        topMoisture,
+        tempMax,
+        tempMin,
+        landSkinTemp,
+        ndvi,
+        evi,
+        rainfall,
+        waterDemand,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchModisNdviLatest(
   lat: number,
   lon: number
-): Promise<{ ndvi: number; evi: number; date: string; url: string } | null> {
+): Promise<{
+  observation: { ndvi: number; evi: number | null; date: string; url: string } | null;
+  error?: string;
+}> {
   const datesUrl = `https://modis.ornl.gov/rst/api/v1/MOD13Q1/dates?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`;
   try {
-    const datesRes = await fetchWithTimeout(datesUrl, 3000);
-    if (!datesRes.ok) return null;
-    const datesJson = (await datesRes.json()) as { dates?: Array<{ modis_date: string; calendar_date?: string }> };
-    const list = datesJson.dates;
-    if (!list || list.length === 0) return null;
+    const { response: datesRes, data: datesJson } = await fetchJsonWithTimeout<{
+      dates?: Array<{ modis_date: string; calendar_date?: string }>;
+    }>(datesUrl, 15000);
+    if (!datesRes.ok) return { observation: null, error: `NASA MODIS dates endpoint returned HTTP ${datesRes.status}` };
+    const list = datesJson?.dates;
+    if (!list || list.length === 0) return { observation: null, error: 'NASA MODIS returned no composite dates for this location' };
     const latest = list[list.length - 1];
 
+    const fetchBand = async (
+      band: string
+    ): Promise<{ value: number | null; error?: string }> => {
+      const subUrl = `https://modis.ornl.gov/rst/api/v1/MOD13Q1/subset?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&band=${band}&startDate=${latest.modis_date}&endDate=${latest.modis_date}&kmAboveBelow=0&kmLeftRight=0`;
+      try {
+        const { response: subRes, data: subJson } = await fetchJsonWithTimeout<{
+          subset?: Array<{ data: number[] }>;
+        }>(subUrl, 15000);
+        if (!subRes.ok) return { value: null, error: `NASA MODIS ${band} endpoint returned HTTP ${subRes.status}` };
+        const rawValue = subJson?.subset?.[0]?.data?.[0];
+        if (typeof rawValue !== 'number' || rawValue < -2000 || rawValue > 10000) {
+          return { value: null, error: `NASA MODIS returned no valid ${band} pixel value` };
+        }
+        return { value: Math.round(rawValue * 0.0001 * 100) / 100 };
+      } catch (error) {
+        return {
+          value: null,
+          error:
+            error instanceof Error && error.name === 'AbortError'
+              ? `NASA MODIS ${band} request timed out`
+              : `NASA MODIS ${band} request failed`,
+        };
+      }
+    };
+    const [ndviResult, eviResult] = await Promise.all([
+      fetchBand('250m_16_days_NDVI'),
+      fetchBand('250m_16_days_EVI'),
+    ]);
+    if (ndviResult.value === null) {
+      return { observation: null, error: ndviResult.error };
+    }
     const subUrl = `https://modis.ornl.gov/rst/api/v1/MOD13Q1/subset?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&band=250m_16_days_NDVI&startDate=${latest.modis_date}&endDate=${latest.modis_date}&kmAboveBelow=0&kmLeftRight=0`;
-    const subRes = await fetchWithTimeout(subUrl, 3000);
-    if (!subRes.ok) return null;
-    const subJson = (await subRes.json()) as { subset?: Array<{ data: number[] }> };
-    const rawVal = subJson.subset?.[0]?.data?.[0];
-    if (typeof rawVal !== 'number' || rawVal < -2000 || rawVal > 10000) return null;
-    const ndvi = Math.max(0.08, Math.min(0.95, Math.round(rawVal * 0.0001 * 100) / 100));
-    const evi = Math.round(ndvi * 0.84 * 100) / 100;
-    return { ndvi, evi, date: latest.calendar_date || latest.modis_date, url: subUrl };
-  } catch {
-    return null;
+    return {
+      observation: {
+        ndvi: ndviResult.value,
+        evi: eviResult.value,
+        date: latest.calendar_date || latest.modis_date,
+        url: subUrl,
+      },
+    };
+  } catch (error) {
+    return {
+      observation: null,
+      error:
+        error instanceof Error && error.name === 'AbortError'
+          ? 'NASA MODIS dates request timed out'
+          : 'NASA MODIS dates request failed',
+    };
   }
 }
 
@@ -429,7 +698,7 @@ async function fetchSoilGridsProfile(
   lat: number,
   lon: number,
   presetKey?: string
-): Promise<{ soil: SoilProfile; url: string }> {
+): Promise<{ soil: SoilProfile; url: string; error?: string }> {
   const preset = presetKey ? REGION_PRESETS[presetKey] : undefined;
   const url =
     `https://rest.isric.org/soilgrids/v2.0/properties/query` +
@@ -445,7 +714,7 @@ async function fetchSoilGridsProfile(
           ? 'Tropical Clay Loam'
           : 'Alluvial Loam'),
     ph: preset?.ph ?? (lat > 34 && lat < 46 ? 7.3 : 6.7),
-    phNote: phNote(preset?.ph ?? 7.1),
+    phNote: phNote(preset?.ph ?? (lat > 34 && lat < 46 ? 7.3 : 6.7)),
     organicMatterPct: 2.1,
     clayPct: 24,
     sandPct: 38,
@@ -453,18 +722,19 @@ async function fetchSoilGridsProfile(
   };
 
   try {
-    const res = await fetchWithTimeout(url, 3000);
-    if (!res.ok) return { soil: fallback, url };
-    const json = (await res.json()) as {
+    const { response: res, data: json } = await fetchJsonWithTimeout<{
       properties?: {
         layers?: Array<{
           name: string;
           depths?: Array<{ values?: { mean?: number } }>;
         }>;
       };
-    };
-    const layers = json.properties?.layers;
-    if (!layers || layers.length === 0) return { soil: fallback, url };
+    }>(url, 15000);
+    if (!res.ok) return { soil: fallback, url, error: `ISRIC returned HTTP ${res.status}` };
+    const layers = json?.properties?.layers;
+    if (!layers || layers.length === 0) {
+      return { soil: fallback, url, error: 'ISRIC returned no soil-property layers' };
+    }
 
     const getVal = (name: string): number | null => {
       const layer = layers.find((l) => l.name === name);
@@ -477,13 +747,20 @@ async function fetchSoilGridsProfile(
     const rawClay = getVal('clay');
     const rawSand = getVal('sand');
 
-    if (rawPh === null && rawClay === null) return { soil: fallback, url };
+    if (rawPh === null || rawSoc === null || rawClay === null || rawSand === null) {
+      const missing = [
+        rawPh === null ? 'pH' : null,
+        rawSoc === null ? 'organic carbon' : null,
+        rawClay === null ? 'clay' : null,
+        rawSand === null ? 'sand' : null,
+      ].filter((value): value is string => value !== null);
+      return { soil: fallback, url, error: `ISRIC response had no mapped value for ${missing.join(', ')}` };
+    }
 
-    const ph = rawPh !== null ? Math.round((rawPh / 10) * 10) / 10 : fallback.ph;
-    const clayPct = rawClay !== null ? Math.round(rawClay / 10) : fallback.clayPct;
-    const sandPct = rawSand !== null ? Math.round(rawSand / 10) : fallback.sandPct;
-    const organicMatterPct =
-      rawSoc !== null ? Math.max(0.6, Math.round((rawSoc / 10) * 0.172 * 10) / 10) : 2.1;
+    const ph = Math.round((rawPh / 10) * 10) / 10;
+    const clayPct = Math.round(rawClay / 10);
+    const sandPct = Math.round(rawSand / 10);
+    const organicMatterPct = Math.max(0, Math.round((rawSoc / 10) * 1.724 * 10) / 10);
 
     let soilType = 'Loam';
     if (clayPct >= 35) soilType = sandPct > 40 ? 'Sandy Clay' : 'Clay Loam';
@@ -494,64 +771,24 @@ async function fetchSoilGridsProfile(
     return {
       url,
       soil: {
-        type: preset?.soil || soilType,
+        type: soilType,
         ph,
         phNote: phNote(ph),
         organicMatterPct,
         clayPct,
         sandPct,
-        source: 'ISRIC SoilGrids Live',
+        source: 'ISRIC SoilGrids (modeled)',
       },
     };
-  } catch {
-    return { soil: fallback, url };
-  }
-}
-
-interface CmrGranuleInfo {
-  granuleId: string;
-  date: string;
-  cloudCover?: number;
-  url: string;
-}
-
-async function fetchLatestCmrGranule(
-  shortNames: string[],
-  lat: number,
-  lon: number
-): Promise<CmrGranuleInfo | null> {
-  const shortQuery = shortNames.map((s) => `short_name[]=${encodeURIComponent(s)}`).join('&');
-  const url =
-    `https://cmr.earthdata.nasa.gov/search/granules.json` +
-    `?${shortQuery}&point=${lon.toFixed(4)},${lat.toFixed(4)}&page_size=1&sort_key=-start_date`;
-
-  try {
-    const res = await fetchWithTimeout(url, 4000);
-    if (!res.ok) return null;
-    const json = (await res.json()) as {
-      feed?: {
-        entry?: Array<{
-          producer_granule_id?: string;
-          title?: string;
-          time_start?: string;
-          cloud_cover?: string | number;
-        }>;
-      };
-    };
-    const entry = json.feed?.entry?.[0];
-    if (!entry) return null;
-    const granuleId = entry.producer_granule_id || entry.title || shortNames[0];
-    const date = entry.time_start ? entry.time_start.slice(0, 10) : 'Recent';
-    const parsedCloud =
-      entry.cloud_cover !== undefined ? Math.round(Number(entry.cloud_cover)) : undefined;
+  } catch (error) {
     return {
-      granuleId,
-      date,
-      cloudCover: Number.isFinite(parsedCloud) ? parsedCloud : undefined,
+      soil: fallback,
       url,
+      error:
+        error instanceof Error && error.name === 'AbortError'
+          ? 'ISRIC request timed out'
+          : 'ISRIC request failed',
     };
-  } catch {
-    return null;
   }
 }
 
@@ -577,23 +814,29 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
     powerClimoRes,
     recentDailyRes,
     forecastRes,
-    modisLatest,
+    modisRes,
     soilRes,
-    smapGranule,
-    hlsGranule,
-    gpmGranule,
   ] = await Promise.all([
     fetchPowerClimatology(loc.lat, loc.lon).catch(() => null),
     fetchPowerRecentDaily(loc.lat, loc.lon),
     fetchUpcomingForecast(loc.lat, loc.lon),
-    fetchModisNdviLatest(loc.lat, loc.lon).catch(() => null),
+    fetchModisNdviLatest(loc.lat, loc.lon),
     fetchSoilGridsProfile(loc.lat, loc.lon, loc.presetKey),
-    fetchLatestCmrGranule(['SPL4SMGP'], loc.lat, loc.lon),
-    fetchLatestCmrGranule(['HLSS30', 'HLSL30'], loc.lat, loc.lon),
-    fetchLatestCmrGranule(['GPM_3IMERGDL'], loc.lat, loc.lon),
   ]);
 
-  const telemetry = powerClimoRes?.telemetry ?? baselineTelemetry(loc.lat);
+  const modisLatest = modisRes.observation;
+  const historicalWeatherRes = powerClimoRes
+    ? null
+    : await fetchHistoricalWeather(loc.lat, loc.lon).catch(() => null);
+  const climateSource: DatasetFeedStatus['climateSource'] = powerClimoRes
+    ? 'NASA POWER climatology'
+    : historicalWeatherRes
+      ? 'Open-Meteo historical reanalysis'
+      : 'Regional seasonal estimate';
+  const telemetry =
+    powerClimoRes?.telemetry ??
+    historicalWeatherRes?.telemetry ??
+    baselineTelemetry(loc.lat);
   const recentDaily = recentDailyRes.rows;
   const forecastDaily = forecastRes.days;
   const soil = soilRes.soil;
@@ -601,7 +844,7 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
   const curMonthIdx = new Date().getUTCMonth();
   if (modisLatest) {
     telemetry.ndvi[curMonthIdx] = modisLatest.ndvi;
-    telemetry.evi[curMonthIdx] = modisLatest.evi;
+    if (modisLatest.evi !== null) telemetry.evi[curMonthIdx] = modisLatest.evi;
   }
 
   const annualRain = telemetry.rainfall.reduce((a, b) => a + b, 0);
@@ -611,109 +854,132 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
   const currentRootMoist = latestDaily?.rootMoisturePct ?? telemetry.rootMoisture[curMonthIdx];
   const currentNdvi = telemetry.ndvi[curMonthIdx];
 
+  const powerClimoUrl =
+    powerClimoRes?.url ||
+    `https://power.larc.nasa.gov/api/temporal/climatology/point?parameters=PRECTOTCORR,T2M,T2M_RANGE,TS,GWETROOT,GWETTOP,ALLSKY_SFC_SW_DWN&community=AG&longitude=${loc.lon.toFixed(4)}&latitude=${loc.lat.toFixed(4)}&format=JSON`;
+  const modisDatesUrl = `https://modis.ornl.gov/rst/api/v1/MOD13Q1/dates?latitude=${loc.lat.toFixed(4)}&longitude=${loc.lon.toFixed(4)}`;
+  const vegetationEstimateSource =
+    climateSource === 'NASA POWER climatology'
+      ? 'NASA POWER climate variables'
+      : climateSource === 'Open-Meteo historical reanalysis'
+        ? 'Open-Meteo historical reanalysis'
+        : 'regional fallback climate values';
   const proofs: DatasetFeedProof[] = [
     {
-      id: 'smap',
-      name: 'Soil Moisture Active Passive (SMAP L4)',
-      provider: 'NASA NSIDC / SMAP via CMR & POWER',
-      status: smapGranule || recentDaily.length > 0 ? 'Live' : 'Fallback',
-      endpointUrl:
-        smapGranule?.url ||
-        `https://cmr.earthdata.nasa.gov/search/granules.json?short_name=SPL4SMGP&point=${loc.lon.toFixed(4)},${loc.lat.toFixed(4)}&page_size=1&sort_key=-start_date`,
-      sampleReading: smapGranule
-        ? `Granule ${smapGranule.date} (${smapGranule.granuleId.slice(0, 26)}…) · Root-zone ${currentRootMoist}%`
-        : `Root-zone soil wetness ${currentRootMoist}% · Topsoil ${latestDaily?.topMoisturePct ?? telemetry.topMoisture[curMonthIdx]}%`,
-      lastCheckedIso: nowIso,
-    },
-    {
-      id: 'hls',
-      name: 'Harmonized Landsat & Sentinel-2 (HLS 10–30m)',
-      provider: 'NASA LPCLOUD Earthdata STAC / CMR',
-      status: hlsGranule ? 'Live' : 'Fallback',
-      endpointUrl:
-        hlsGranule?.url ||
-        `https://cmr.earthdata.nasa.gov/search/granules.json?short_name[]=HLSS30&short_name[]=HLSL30&point=${loc.lon.toFixed(4)},${loc.lat.toFixed(4)}&page_size=1&sort_key=-start_date`,
-      sampleReading: hlsGranule
-        ? `Scene ${hlsGranule.date} (${hlsGranule.granuleId.slice(0, 24)}…${hlsGranule.cloudCover !== undefined ? `, ${hlsGranule.cloudCover}% cloud` : ''}) · Plot NDVI ${currentNdvi.toFixed(2)}`
-        : `Multispectral NDVI ${currentNdvi.toFixed(2)} across active plot`,
-      lastCheckedIso: nowIso,
-    },
-    {
-      id: 'gpm-imerg',
-      name: 'Global Precipitation Measurement (GPM & IMERG)',
-      provider: 'NASA GES DISC / GPM IMERG & POWER',
-      status: gpmGranule || powerClimoRes ? 'Live' : 'Fallback',
-      endpointUrl:
-        gpmGranule?.url ||
-        `https://cmr.earthdata.nasa.gov/search/granules.json?short_name=GPM_3IMERGDL&point=${loc.lon.toFixed(4)},${loc.lat.toFixed(4)}&page_size=1&sort_key=-start_date`,
-      sampleReading: gpmGranule
-        ? `IMERG ${gpmGranule.date} · This mo: ${telemetry.rainfall[curMonthIdx]} mm rain vs. ${telemetry.waterDemand[curMonthIdx]} mm crop need`
-        : `Annual rain ${annualRain} mm · This month ${telemetry.rainfall[curMonthIdx]} mm vs. ${telemetry.waterDemand[curMonthIdx]} mm demand`,
-      lastCheckedIso: nowIso,
-    },
-    {
       id: 'power-climo',
-      name: 'NASA POWER Agroclimatology & Daily Observations',
+      name: 'NASA POWER Agroclimatology',
       provider: 'NASA Langley Research Center',
-      status: powerClimoRes ? 'Live' : 'Fallback',
-      endpointUrl:
-        powerClimoRes?.url ||
-        `https://power.larc.nasa.gov/api/temporal/climatology/point?latitude=${loc.lat.toFixed(4)}&longitude=${loc.lon.toFixed(4)}`,
-      sampleReading: latestDaily
-        ? `Latest (${latestDaily.date}): ${latestDaily.tempMaxC}°/${latestDaily.tempMinC}°C · July avg high ${telemetry.tempMax[6]}°C`
-        : `July high ${telemetry.tempMax[6]}°C · Annual rain ${annualRain} mm`,
+      status: powerClimoRes ? 'Climatology' : 'Unavailable',
+      endpointUrl: powerClimoUrl,
+      sampleReading: powerClimoRes
+        ? `${powerClimoRes.period} · July typical daily high ${telemetry.tempMax[6]}°C · annual precipitation ${annualRain} mm`
+        : 'No complete NASA POWER monthly climatology was returned for this location.',
       lastCheckedIso: nowIso,
     },
+  ];
+  if (historicalWeatherRes) {
+    proofs.push({
+      id: 'open-meteo-history',
+      name: 'Historical Weather Reanalysis',
+      provider: 'Open-Meteo archive API',
+      status: 'Historical data',
+      endpointUrl: historicalWeatherRes.url,
+      sampleReading: `${historicalWeatherRes.period} · monthly temperature, precipitation and modeled soil moisture; surface temperature and vegetation indices remain estimates.`,
+      lastCheckedIso: nowIso,
+    });
+  } else if (!powerClimoRes) {
+    proofs.push({
+      id: 'seasonal-estimate',
+      name: 'Regional Seasonal Fallback',
+      provider: 'Built-in estimate',
+      status: 'Fallback',
+      sampleReading: `No complete NASA POWER or Open-Meteo historical data was returned. Regional seasonal estimates are being shown · July high ${telemetry.tempMax[6]}°C · annual precipitation ${annualRain} mm.`,
+      lastCheckedIso: nowIso,
+    });
+  }
+  proofs.push(
     {
-      id: 'forecast',
-      name: '14-Day Rainfall & Frost Forecast',
-      provider: 'Open-Meteo Global Weather API (Keyless)',
-      status: forecastDaily.length > 0 ? 'Live' : 'Fallback',
-      endpointUrl: forecastRes.url,
-      sampleReading:
-        forecastDaily.length > 0
-          ? `Next 7 days: ${next7Rain} mm rain · Low ${Math.min(...forecastDaily.slice(0, 7).map((d) => d.tempMinC))}°C`
-          : 'Using NASA seasonal rainfall estimate.',
+      id: 'power-daily',
+      name: 'NASA POWER Daily Point Data',
+      provider: 'NASA Langley Research Center',
+      status: latestDaily ? 'Historical data' : 'Unavailable',
+      endpointUrl: recentDailyRes.url,
+      sampleReading: latestDaily
+        ? `Latest available date ${latestDaily.date}: ${latestDaily.tempMaxC}°/${latestDaily.tempMinC}°C · ${latestDaily.rainMm} mm precipitation · modeled root-zone wetness ${latestDaily.rootMoisturePct}%`
+        : 'No complete daily observation returned; daily values are omitted.',
       lastCheckedIso: nowIso,
     },
     {
       id: 'modis',
-      name: 'MODIS 250m Vegetation Index (MOD13Q1)',
+      name: 'NASA MODIS 250m Vegetation Index (MOD13Q1)',
       provider: 'NASA ORNL DAAC REST Service',
-      status: modisLatest ? 'Live' : 'Fallback',
-      endpointUrl:
-        modisLatest?.url ||
-        `https://modis.ornl.gov/rst/api/v1/MOD13Q1/dates?latitude=${loc.lat.toFixed(4)}&longitude=${loc.lon.toFixed(4)}`,
+      status: modisLatest ? 'Historical data' : 'Unavailable',
+      endpointUrl: modisLatest?.url || modisDatesUrl,
       sampleReading: modisLatest
-        ? `Measured ${modisLatest.date}: NDVI ${modisLatest.ndvi.toFixed(2)} · EVI ${modisLatest.evi.toFixed(2)}`
-        : `Estimated NDVI ${currentNdvi.toFixed(2)}`,
+        ? `MODIS observation ${modisLatest.date}: NDVI ${modisLatest.ndvi.toFixed(2)}${modisLatest.evi !== null ? ` · EVI ${modisLatest.evi.toFixed(2)}` : ''}. Other months use an estimate from ${vegetationEstimateSource}.`
+        : `${modisRes.error || 'No MODIS pixel value returned'}; NDVI is supplied by the separate estimate below.`,
+      lastCheckedIso: nowIso,
+    },
+    {
+      id: 'vegetation-estimate',
+      name: 'Seasonal Vegetation Index Estimate',
+      provider: `${vegetationEstimateSource} (app-derived proxy)`,
+      status: 'Estimated',
+      endpointUrl:
+        climateSource === 'NASA POWER climatology'
+          ? powerClimoUrl
+          : historicalWeatherRes?.url,
+      sampleReading: modisLatest
+        ? `Only the ${modisLatest.date} composite is a MODIS pixel value. Other monthly NDVI/EVI values are estimates; current NDVI ${currentNdvi.toFixed(2)}.`
+        : `No MODIS pixel value was available. NDVI ${currentNdvi.toFixed(2)} is estimated from climate variables, not satellite imagery.`,
       lastCheckedIso: nowIso,
     },
     {
       id: 'soilgrids',
       name: 'ISRIC SoilGrids 250m Soil Properties',
-      provider: 'ISRIC World Soil Information',
-      status: soil.source === 'ISRIC SoilGrids Live' ? 'Live' : 'Fallback',
+      provider: 'ISRIC World Soil Information (modeled map)',
+      status: soil.source === 'ISRIC SoilGrids (modeled)' ? 'Modeled' : 'Fallback',
       endpointUrl: soilRes.url,
-      sampleReading: `${soil.type} · pH ${soil.ph.toFixed(1)} · ${soil.organicMatterPct}% organic matter`,
+      sampleReading:
+        soil.source === 'ISRIC SoilGrids (modeled)'
+          ? `Mapped 0–5 cm properties: ${soil.type} · pH ${soil.ph.toFixed(1)} · estimated organic matter ${soil.organicMatterPct}%`
+          : `${soilRes.error || 'ISRIC data unavailable'}; regional baseline assumption (not a local soil test): ${soil.type} · pH ${soil.ph.toFixed(1)}`,
       lastCheckedIso: nowIso,
     },
-  ];
-
-  const liveProofs = proofs.filter((p) => p.status === 'Live');
+    {
+      id: 'forecast',
+      name: '14-Day Rainfall & Frost Forecast',
+      provider: 'Open-Meteo Global Weather API',
+      status: forecastDaily.length > 0
+        ? 'Current forecast'
+        : climateSource === 'Regional seasonal estimate'
+          ? 'Fallback'
+          : climateSource === 'NASA POWER climatology'
+            ? 'Climatology'
+            : 'Historical data',
+      endpointUrl: forecastRes.url,
+      sampleReading:
+        forecastDaily.length > 0
+          ? `Open-Meteo forecast · next 7 days: ${next7Rain} mm rain · minimum ${Math.min(...forecastDaily.slice(0, 7).map((d) => d.tempMinC))}°C`
+          : `Forecast unavailable; ${climateSource} provides seasonal context, not a forecast.`,
+      lastCheckedIso: nowIso,
+    }
+  );
 
   const feeds: DatasetFeedStatus = {
-    powerClimatology: powerClimoRes ? 'Live' : 'Cached Baseline',
-    powerDaily: recentDaily.length > 0 ? 'Live' : 'Unavailable',
+    climateSource,
+    powerDaily: recentDaily.length > 0 ? 'NASA POWER daily' : 'Unavailable',
     modisNdvi: modisLatest
-      ? 'Live (ORNL MOD13Q1)'
-      : hlsGranule
-        ? 'Live (HLS 10–30m)'
-        : 'NASA Agro-Model',
-    soilGrids: soil.source === 'ISRIC SoilGrids Live' ? 'Live (ISRIC v2.0)' : 'Regional Baseline',
-    forecast: forecastDaily.length > 0 ? 'Live' : 'NASA Climatology',
+      ? 'NASA MODIS observation'
+      : climateSource === 'NASA POWER climatology'
+        ? 'Estimated from NASA POWER'
+        : climateSource === 'Open-Meteo historical reanalysis'
+          ? 'Estimated from Open-Meteo reanalysis'
+          : 'Regional vegetation estimate',
+    soilGrids: soil.source === 'ISRIC SoilGrids (modeled)' ? 'ISRIC modeled soil map' : 'Regional baseline',
+    forecast: forecastDaily.length > 0 ? 'Open-Meteo forecast' : climateSource,
     lastUpdatedIso: nowIso,
-    proofs: liveProofs,
+    proofs,
   };
 
   const payload: RawNasaPayload = { telemetry, recentDaily, forecastDaily, soil, feeds };

@@ -13,6 +13,7 @@ interface AnalyticsPageProps {
 
 export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPageProps) {
   const { telemetry, recentDaily, location, feeds, survivalPredictor } = data;
+  const hasModisObservation = feeds.modisNdvi === 'NASA MODIS observation';
   const savedSliders = readStorage<{ rainShiftPct?: number; tempShiftC?: number }>(
     STORAGE_KEYS.ANALYTICS_SLIDERS,
     {}
@@ -300,10 +301,10 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
               <h3 className="font-serif font-bold text-lg text-almanac-ink">
                 3. Vegetation Greenness (NDVI &amp; EVI)
               </h3>
-              <p className="text-xs text-almanac-muted">Harmonized Landsat &amp; Sentinel-2 (HLS) 10m–30m Canopy Index (0.0–1.0)</p>
+              <p className="text-xs text-almanac-muted">NASA MODIS MOD13Q1 250m snapshot when available; other months are estimated from NASA POWER climate data.</p>
             </div>
-            <span className="shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-emerald-100 badge-emerald text-almanac-forest">
-              {feeds.modisNdvi === 'Live (HLS 10–30m)' ? 'HLS 10–30m' : feeds.modisNdvi === 'Live (ORNL MOD13Q1)' ? 'MODIS + HLS' : 'HLS / Agro'}
+            <span className={`shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full ${hasModisObservation ? 'bg-emerald-100 badge-emerald text-almanac-forest' : 'bg-amber-100 text-amber-900'}`}>
+              {hasModisObservation ? 'MODIS + estimates' : 'Estimated'}
             </span>
           </div>
           <NasaChart

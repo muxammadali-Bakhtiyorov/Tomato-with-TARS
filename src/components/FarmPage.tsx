@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -60,6 +60,7 @@ interface FarmPageProps {
   ) => Promise<void>;
   onDeleteField: (id: string) => Promise<void>;
   onScanLocation: (query: string) => Promise<void>;
+  onLocateMe: (lat: number, lon: number) => Promise<void>;
   onSaveCurrentPlan: () => Promise<void>;
   onDeletePlan: (id: string) => Promise<void>;
   onLoadSavedPlan: (plan: SavedFarmPlan) => void;
@@ -88,6 +89,7 @@ export function FarmPage({
   onUpdateField,
   onDeleteField,
   onScanLocation,
+  onLocateMe,
   onSaveCurrentPlan,
   onDeletePlan,
   onLoadSavedPlan,
@@ -106,14 +108,22 @@ export function FarmPage({
   const [plotGoal, setPlotGoal] = useState<RotationGoal>(data.goal);
   const [plotPlantedDate, setPlotPlantedDate] = useState('');
   const [savingPlot, setSavingPlot] = useState(false);
+  const [plotSaveError, setPlotSaveError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [searchText, setSearchText] = useState(location.name);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSearchText(location.name);
+  }, [location.name]);
 
   const openAddPlotForm = () => {
     setEditingFieldId(null);
     setConfirmDeleteId(null);
+    setPlotSaveError(null);
     setPlotName('');
     setPlotArea('50');
     setPlotLocation(location.name);
@@ -125,6 +135,7 @@ export function FarmPage({
 
   const openEditPlotForm = (field: FarmFieldPlot) => {
     setConfirmDeleteId(null);
+    setPlotSaveError(null);
     setEditingFieldId(field.id);
     setPlotName(field.name);
     setPlotArea(String(field.areaHa));
@@ -139,12 +150,14 @@ export function FarmPage({
     setShowPlotForm(false);
     setEditingFieldId(null);
     setConfirmDeleteId(null);
+    setPlotSaveError(null);
   };
 
   const handleSubmitPlotForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!plotName.trim() || savingPlot) return;
     setSavingPlot(true);
+    setPlotSaveError(null);
     try {
       const payload = {
         name: plotName.trim(),
@@ -163,6 +176,8 @@ export function FarmPage({
       setPlotPlantedDate('');
       setEditingFieldId(null);
       setShowPlotForm(false);
+    } catch (error) {
+      setPlotSaveError(error instanceof Error ? error.message : 'Could not save the farm plot. Please try again.');
     } finally {
       setSavingPlot(false);
     }
@@ -186,6 +201,42 @@ export function FarmPage({
     e.preventDefault();
     if (!searchText.trim() || scanning) return;
     onScanLocation(searchText.trim());
+  };
+
+  const handleLocateMe = () => {
+    setLocationError(null);
+    if (!window.isSecureContext) {
+      setLocationError('Device location requires a secure connection (HTTPS or localhost).');
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocationError('Device location is not available in this browser.');
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          await onLocateMe(coords.latitude, coords.longitude);
+        } catch {
+          setLocationError('Could not load farm data for your device location. Please try again.');
+        } finally {
+          setLocating(false);
+        }
+      },
+      (error) => {
+        setLocationError(
+          error.code === error.PERMISSION_DENIED
+            ? 'Location permission was denied. Allow location access in your browser settings, then try again.'
+            : error.code === error.TIMEOUT
+              ? 'Your device took too long to respond. Please try again.'
+              : 'Your device location is currently unavailable. Check your location settings and try again.'
+        );
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
   };
 
   const survivalBadgeColor =
@@ -299,6 +350,98 @@ export function FarmPage({
         </div>
       </div>
 
+      <div className="bg-almanac-card border border-almanac-border rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <span className="p-2.5 rounded-2xl bg-almanac-forest/10 text-almanac-forest shrink-0">
+              <LocateFixed className="w-5 h-5" />
+            </span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-mono uppercase tracking-wider text-almanac-muted font-bold">
+                Farm weather &amp; soil location
+              </div>
+              <h2 className="font-serif font-bold text-xl text-almanac-ink truncate">{location.name}</h2>
+              <p className="text-xs text-almanac-muted font-mono mt-0.5">{location.coordsLabel}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-[11px] font-medium">
+            <span className="px-3 py-1.5 rounded-full bg-almanac-pill border border-almanac-border text-almanac-ink">
+              {soil.type} · pH {soil.ph.toFixed(1)}
+            </span>
+            <span className="px-3 py-1.5 rounded-full bg-emerald-100 badge-emerald text-almanac-forest">
+              {location.climateZone}
+            </span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmitLocation} className="flex flex-col sm:flex-row gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-almanac-muted" />
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => {
+                setSearchText(e.target.value);
+                setLocationError(null);
+              }}
+              placeholder="Search a city, valley, or coordinates"
+              autoComplete="off"
+              className="w-full bg-white surface-soft border border-almanac-borderDark focus:border-almanac-forest rounded-2xl pl-10 pr-3 py-3 text-sm text-almanac-ink focus:outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={scanning || !searchText.trim()}
+            className="bg-almanac-forest btn-forest text-white font-bold text-xs px-4 py-3 rounded-2xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
+          >
+            <Satellite className="w-4 h-4" />
+            <span>{scanning ? 'Checking...' : 'Check location'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleLocateMe}
+            disabled={locating || scanning}
+            className="bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-almanac-ink font-bold text-xs px-4 py-3 rounded-2xl transition flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
+          >
+            <LocateFixed className="w-4 h-4 text-almanac-forest" />
+            <span>{locating ? 'Finding you...' : 'Use my location'}</span>
+          </button>
+        </form>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {SAMPLE_REGIONS.map((region) => (
+              <button
+                key={region.key}
+                type="button"
+                disabled={scanning}
+                onClick={() => {
+                  setSearchText(region.query);
+                  setLocationError(null);
+                  onScanLocation(region.query);
+                }}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition cursor-pointer disabled:opacity-60 ${
+                  location.name.toLowerCase().includes(region.label.toLowerCase())
+                    ? 'bg-almanac-forest btn-forest text-white'
+                    : 'bg-almanac-pill hover:bg-almanac-border text-almanac-ink'
+                }`}
+              >
+                {region.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-almanac-muted">
+            Your device location is requested only when you tap “Use my location.”
+          </p>
+        </div>
+        {locationError && (
+          <p role="alert" className="text-xs text-almanac-terracotta bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+            {locationError}
+          </p>
+        )}
+      </div>
+
       {/* Add / Edit Farm Plot Form Drawer */}
       {showPlotForm && (
         <form
@@ -317,6 +460,12 @@ export function FarmPage({
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {plotSaveError && (
+            <p role="alert" className="text-xs text-almanac-terracotta bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+              {plotSaveError}
+            </p>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-end">
             <div className="space-y-1">
@@ -494,6 +643,75 @@ export function FarmPage({
             )}
           </div>
         ) : null}
+      </div>
+
+      <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-muted font-semibold">
+              Crop Survival Predictor · {survivalPredictor.cropName}
+            </span>
+            <h3 className="font-serif font-bold text-xl text-almanac-ink mt-0.5">
+              Will Your {survivalPredictor.cropName} Survive?
+            </h3>
+          </div>
+          <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${survivalBadgeColor}`}>
+            {survivalPredictor.verdictTone === 'safe' ? (
+              <ShieldCheck className="w-3.5 h-3.5" />
+            ) : (
+              <ShieldAlert className="w-3.5 h-3.5" />
+            )}
+            <span>{survivalPredictor.verdictLabel}</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-5">
+          <div className="space-y-4">
+            <div className="flex items-baseline gap-6">
+              <div>
+                <div className="font-serif font-bold text-4xl text-almanac-forest tabular-nums">
+                  {survivalPredictor.survivalPct}%
+                </div>
+                <div className="text-[11px] text-almanac-muted">Chance of thriving</div>
+              </div>
+              <div className="h-10 w-px bg-almanac-border" />
+              <div>
+                <div className="font-serif font-bold text-3xl text-almanac-terracotta tabular-nums">
+                  {survivalPredictor.dieOutRiskPct}%
+                </div>
+                <div className="text-[11px] text-almanac-muted">Die-out risk</div>
+              </div>
+            </div>
+            <p className="text-xs text-almanac-ink leading-relaxed bg-almanac-pill/60 border border-almanac-border rounded-2xl p-3.5">
+              {survivalPredictor.willSurviveSummary}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {survivalPredictor.risks.map((risk) => (
+              <div
+                key={risk.label}
+                className="bg-white surface-soft border border-almanac-border rounded-2xl p-3.5 space-y-1"
+              >
+                <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                  <span className="text-almanac-ink">{risk.label}</span>
+                  <span
+                    className={
+                      risk.level === 'High'
+                        ? 'text-almanac-terracotta'
+                        : risk.level === 'Medium'
+                          ? 'text-almanac-amber'
+                          : 'text-almanac-forest'
+                    }
+                  >
+                    {risk.level} Risk
+                  </span>
+                </div>
+                <p className="text-[11px] text-almanac-muted leading-snug">{risk.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* CROP PLAYBOOK & PRESERVATION GUIDE */}
