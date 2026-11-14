@@ -1,6 +1,7 @@
 import express from 'express';
 import { buildAgronomicPlan, evaluateCustomRotation } from './agronomyEngine.ts';
-import { runTarsChat, type ChatRequestPayload } from './geminiService.ts';
+import { generateFarmAiAdvice, runTarsChat, type ChatRequestPayload } from './geminiService.ts';
+import { estimateSandboxEconomics, getCountryMarketDataset } from './marketService.ts';
 import { getNasaEnvironmentData, resolveLocation } from './nasaService.ts';
 import {
   addFarmNote,
@@ -17,6 +18,7 @@ import {
 import type {
   AnchorCrop,
   CustomCropId,
+  FarmFieldPlot,
   NasaFarmResponse,
   RotationGoal,
 } from '../src/types/farm.ts';
@@ -71,6 +73,9 @@ export function createApiApp() {
       const lonRaw = typeof req.query.lon === 'string' ? Number(req.query.lon) : undefined;
       const goal = parseGoal(req.query.goal);
       const anchorCrop = parseCrop(req.query.crop);
+      const farmName = typeof req.query.farmName === 'string' ? req.query.farmName : undefined;
+      const areaHa = typeof req.query.areaHa === 'string' ? Number(req.query.areaHa) : undefined;
+      const plantedDate = typeof req.query.plantedDate === 'string' ? req.query.plantedDate : undefined;
 
       const resolved = await resolveLocation(
         q,
@@ -87,6 +92,9 @@ export function createApiApp() {
         forecastDaily: nasaData.forecastDaily,
         goal,
         anchorCrop,
+        farmName,
+        areaHa: Number.isFinite(areaHa) ? areaHa : undefined,
+        plantedDate,
       });
 
       const response: NasaFarmResponse = {
@@ -94,6 +102,7 @@ export function createApiApp() {
         soil: nasaData.soil,
         goal,
         anchorCrop,
+        cropPlaybook: agronomy.cropPlaybook,
         telemetry: nasaData.telemetry,
         recentDaily: nasaData.recentDaily,
         rainfallPredictor: agronomy.rainfallPredictor,
@@ -112,7 +121,30 @@ export function createApiApp() {
     }
   });
 
-  // Evaluate a farmer's custom 4-season crop rotation plan against real NASA telemetry
+  // Live auto-updating per-country agricultural market dataset (Live FX + World Bank index)
+  app.get('/api/market', async (req, res) => {
+    try {
+      const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+      const countryCode = typeof req.query.countryCode === 'string' ? req.query.countryCode : undefined;
+      const countryName = typeof req.query.countryName === 'string' ? req.query.countryName : undefined;
+      const forceRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
+
+      const resolved = q ? await resolveLocation(q) : null;
+      const dataset = await getCountryMarketDataset({
+        countryCode: countryCode || resolved?.countryCode,
+        countryName: countryName || resolved?.countryName,
+        locationName: resolved?.name || q,
+        forceRefresh,
+      });
+
+      res.json(dataset);
+    } catch (err) {
+      console.error('Market dataset error:', err);
+      res.status(500).json({ error: 'Unable to load country market dataset' });
+    }
+  });
+
+  // Evaluate a farmer's custom 4-season crop rotation plan against real NASA telemetry + country market economics
   app.post('/api/rotations/evaluate', async (req, res) => {
     try {
       const body = req.body as {
@@ -120,6 +152,8 @@ export function createApiApp() {
         lat?: number;
         lon?: number;
         crops?: string[];
+        areaHa?: number;
+        refreshMarket?: boolean;
       };
 
       const rawCrops = Array.isArray(body.crops) ? body.crops : [];
@@ -135,7 +169,15 @@ export function createApiApp() {
         typeof body.lat === 'number' && Number.isFinite(body.lat) ? body.lat : undefined,
         typeof body.lon === 'number' && Number.isFinite(body.lon) ? body.lon : undefined
       );
-      const nasaData = await getNasaEnvironmentData(resolved);
+      const [nasaData, marketDataset] = await Promise.all([
+        getNasaEnvironmentData(resolved),
+        getCountryMarketDataset({
+          countryCode: resolved.countryCode,
+          countryName: resolved.countryName,
+          locationName: resolved.name,
+          forceRefresh: Boolean(body.refreshMarket),
+        }),
+      ]);
 
       const evaluation = evaluateCustomRotation({
         crops,
@@ -144,10 +186,48 @@ export function createApiApp() {
         location: nasaData.location,
       });
 
-      res.json(evaluation);
+      const economics = estimateSandboxEconomics({
+        crops,
+        seasonStatuses: evaluation.seasonChecks.map((s) => ({
+          seasonLabel: s.seasonLabel,
+          status: s.status,
+        })),
+        survivalPct: evaluation.survivalPct,
+        waterImpactPct: evaluation.waterImpactPct,
+        areaHa: typeof body.areaHa === 'number' && body.areaHa > 0 ? body.areaHa : 10,
+        dataset: marketDataset,
+      });
+
+      res.json({
+        ...evaluation,
+        marketDataset,
+        economics,
+      });
     } catch (err) {
       console.error('Evaluate custom rotation error:', err);
       res.status(500).json({ error: 'Unable to evaluate custom rotation' });
+    }
+  });
+
+  // Live AI + NASA tailored farm tips, harvest countdown, watering schedule, preservation & survival risks
+  app.post('/api/farm/ai-advice', async (req, res) => {
+    try {
+      const body = req.body as {
+        farmData?: NasaFarmResponse;
+        activeField?: FarmFieldPlot;
+      };
+      if (!body?.farmData) {
+        res.status(400).json({ error: 'farmData is required' });
+        return;
+      }
+      const advice = await generateFarmAiAdvice({
+        farmData: body.farmData,
+        activeField: body.activeField,
+      });
+      res.json(advice);
+    } catch (err) {
+      console.error('AI farm advice error:', err);
+      res.status(500).json({ error: 'Unable to generate AI farm advice' });
     }
   });
 
@@ -157,12 +237,13 @@ export function createApiApp() {
 
   app.post('/api/fields', async (req, res) => {
     try {
-      const { name, areaHa, locationQuery, anchorCrop, goal } = req.body as {
+      const { name, areaHa, locationQuery, anchorCrop, goal, plantedDate } = req.body as {
         name?: string;
         areaHa?: number;
         locationQuery?: string;
         anchorCrop?: string;
         goal?: string;
+        plantedDate?: string;
       };
       if (!name || !name.trim()) {
         res.status(400).json({ error: 'Field name is required' });
@@ -177,6 +258,7 @@ export function createApiApp() {
         lon: loc.lon,
         anchorCrop: parseCrop(anchorCrop),
         goal: parseGoal(goal),
+        plantedDate: typeof plantedDate === 'string' && plantedDate.trim() ? plantedDate.trim() : undefined,
       });
       res.status(201).json({ field: created, fields: listFields() });
     } catch (err) {
@@ -187,18 +269,20 @@ export function createApiApp() {
 
   app.patch('/api/fields/:id', async (req, res) => {
     try {
-      const { name, areaHa, locationQuery, anchorCrop, goal } = req.body as {
+      const { name, areaHa, locationQuery, anchorCrop, goal, plantedDate } = req.body as {
         name?: string;
         areaHa?: number;
         locationQuery?: string;
         anchorCrop?: string;
         goal?: string;
+        plantedDate?: string;
       };
       const updates: Parameters<typeof updateFieldPlot>[1] = {};
       if (typeof name === 'string' && name.trim()) updates.name = name;
       if (typeof areaHa === 'number' && Number.isFinite(areaHa)) updates.areaHa = areaHa;
       if (typeof anchorCrop === 'string') updates.anchorCrop = parseCrop(anchorCrop);
       if (typeof goal === 'string') updates.goal = parseGoal(goal);
+      if (plantedDate !== undefined) updates.plantedDate = typeof plantedDate === 'string' ? plantedDate.trim() : '';
       if (typeof locationQuery === 'string' && locationQuery.trim()) {
         const loc = await resolveLocation(locationQuery);
         updates.locationQuery = loc.name;

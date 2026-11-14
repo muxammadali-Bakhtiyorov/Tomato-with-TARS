@@ -1,5 +1,5 @@
 export type ThemeMode = 'moon' | 'sun';
-export type DashboardPage = 'summary' | 'rotations' | 'telemetry' | 'datasets';
+export type DashboardPage = 'summary' | 'telemetry' | 'datasets';
 export type RotationGoal = 'water' | 'nitrogen' | 'pest';
 export type AnchorCrop = 'tomatoes' | 'peppers' | 'potatoes' | 'wheat' | 'corn' | 'melons';
 
@@ -60,6 +60,8 @@ export interface RainfallPredictor {
 }
 
 export interface SurvivalPredictor {
+  cropKey: AnchorCrop;
+  cropName: string;
   survivalPct: number;
   dieOutRiskPct: number;
   verdictLabel: string;
@@ -70,6 +72,24 @@ export interface SurvivalPredictor {
     level: 'Low' | 'Medium' | 'High';
     detail: string;
   }[];
+}
+
+export interface CropPlaybook {
+  cropKey: AnchorCrop;
+  cropName: string;
+  emoji: string;
+  daysToMaturityMin: number;
+  daysToMaturityMax: number;
+  idealTempRangeC: string;
+  idealPhRange: string;
+  waterFrequencyDaysDry: number;
+  waterGuide: string;
+  harvestSigns: string;
+  preservationMethods: {
+    method: string;
+    detail: string;
+  }[];
+  careTips: string[];
 }
 
 export interface SoilProfile {
@@ -143,6 +163,65 @@ export interface DatasetFeedStatus {
   proofs: DatasetFeedProof[];
 }
 
+export interface CropMarketQuote {
+  cropId: CustomCropId;
+  cropName: string;
+  farmgatePricePerKgUsd: number;
+  farmgatePricePerKgLocal: number;
+  investmentPerHaUsd: number;
+  investmentPerHaLocal: number;
+  baselineYieldTonPerHa: number;
+  unitNote: string;
+}
+
+export interface CountryMarketDataset {
+  countryCode: string;
+  countryName: string;
+  currencyCode: string;
+  currencySymbol: string;
+  usdToLocalRate: number;
+  foodPriceIndexFactor: number;
+  inputCostFactor: number;
+  fxStatus: 'Live' | 'Baseline';
+  wbIndexStatus: 'Live' | 'Baseline';
+  fetchedAtIso: string;
+  sources: string[];
+  crops: Record<CustomCropId, CropMarketQuote>;
+}
+
+export interface SandboxSeasonEconomics {
+  seasonLabel: string;
+  cropId: CustomCropId;
+  cropName: string;
+  expectedYieldTons: number;
+  pricePerKgUsd: number;
+  pricePerKgLocal: number;
+  investmentUsd: number;
+  investmentLocal: number;
+  revenueUsd: number;
+  revenueLocal: number;
+  profitUsd: number;
+  profitLocal: number;
+}
+
+export interface SandboxEconomics {
+  areaHa: number;
+  countryName: string;
+  countryCode: string;
+  currencyCode: string;
+  currencySymbol: string;
+  totalInvestmentUsd: number;
+  totalInvestmentLocal: number;
+  totalRevenueUsd: number;
+  totalRevenueLocal: number;
+  netProfitUsd: number;
+  netProfitLocal: number;
+  roiPct: number;
+  seasonBreakdown: SandboxSeasonEconomics[];
+  datasetUpdatedIso: string;
+  marketSources: string[];
+}
+
 export interface CustomRotationEvaluation {
   crops: [CustomCropId, CustomCropId, CustomCropId, CustomCropId];
   verdict: 'good' | 'okay' | 'bad';
@@ -160,6 +239,19 @@ export interface CustomRotationEvaluation {
     status: 'safe' | 'caution' | 'danger';
     note: string;
   }[];
+  marketDataset?: CountryMarketDataset;
+  economics?: SandboxEconomics;
+}
+
+export interface FarmAiAdvice {
+  headline: string;
+  harvestForecast: string;
+  wateringAdvice: string;
+  preservationTip: string;
+  survivalRisks: string[];
+  actionTips: string[];
+  source: 'Gemini AI' | 'Agronomy Engine';
+  generatedAtIso: string;
 }
 
 export interface NasaFarmResponse {
@@ -169,10 +261,13 @@ export interface NasaFarmResponse {
     lon: number;
     coordsLabel: string;
     climateZone: 'Arid' | 'Semi-Arid' | 'Temperate' | 'Humid';
+    countryCode?: string;
+    countryName?: string;
   };
   soil: SoilProfile;
   goal: RotationGoal;
   anchorCrop: AnchorCrop;
+  cropPlaybook?: CropPlaybook;
   telemetry: MonthlyTelemetry;
   recentDaily: RecentDailyObservation[];
   rainfallPredictor: RainfallPredictor;
@@ -206,6 +301,7 @@ export interface FarmFieldPlot {
   lon: number;
   anchorCrop: AnchorCrop;
   goal: RotationGoal;
+  plantedDate?: string;
   cropStrength: number;
   soilMoisturePct: number;
   healthBadge: string;

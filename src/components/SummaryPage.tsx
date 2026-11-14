@@ -1,22 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   Bookmark,
   Check,
+  CheckCircle2,
   CloudRain,
   Download,
   Droplets,
   Leaf,
+  LocateFixed,
   Pencil,
   Plus,
+  Satellite,
+  Search,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Sprout,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
+import { readStorage, STORAGE_KEYS, writeStorage } from '../lib/persistence';
 import type {
   AnchorCrop,
-  DashboardPage,
+  CustomCropId,
+  CustomRotationEvaluation,
   FarmFieldPlot,
   NasaFarmResponse,
   RotationGoal,
@@ -31,6 +40,7 @@ interface SummaryPageProps {
   fields: FarmFieldPlot[];
   activeFieldId: string;
   savedPlans: SavedFarmPlan[];
+  scanning: boolean;
   savingPlan: boolean;
   onSelectField: (field: FarmFieldPlot) => void;
   onCreateField: (payload: {
@@ -51,11 +61,86 @@ interface SummaryPageProps {
     }
   ) => Promise<void>;
   onDeleteField: (id: string) => Promise<void>;
-  onNavigate: (page: DashboardPage) => void;
+  onScanLocation: (query: string) => Promise<void>;
+  onChangeGoal: (goal: RotationGoal) => void;
+  onChangeAnchorCrop: (crop: AnchorCrop) => void;
   onSaveCurrentPlan: () => Promise<void>;
   onDeletePlan: (id: string) => Promise<void>;
   onLoadSavedPlan: (plan: SavedFarmPlan) => void;
   onExportJson: () => void;
+}
+
+const SAMPLE_REGIONS = [
+  { key: 'tashkent', label: 'Tashkent', query: 'Tashkent Valley, Uzbekistan' },
+  { key: 'fergana', label: 'Fergana', query: 'Fergana Basin, Uzbekistan' },
+  { key: 'california', label: 'California', query: 'Central Valley, California' },
+  { key: 'alentejo', label: 'Alentejo', query: 'Alentejo Plains, Portugal' },
+];
+
+const GOALS: { id: RotationGoal; label: string }[] = [
+  { id: 'water', label: '💧 Save Water' },
+  { id: 'nitrogen', label: '🌱 Feed Soil' },
+  { id: 'pest', label: '🛡️ Stop Pests' },
+];
+
+type WaterSetup = 'drip' | 'rainfed' | 'furrow';
+
+const WATER_SETUPS: { id: WaterSetup; label: string; tip: string }[] = [
+  {
+    id: 'drip',
+    label: '💧 Drip',
+    tip: 'Drip + early-morning cycles cut evaporation ~30% under straw mulch.',
+  },
+  {
+    id: 'rainfed',
+    label: '🌧️ Rain-Fed',
+    tip: 'Lean on winter cover crops, chickpeas & sorghum over heavy water users.',
+  },
+  {
+    id: 'furrow',
+    label: '🚜 Furrow',
+    tip: 'Use deep-root crops (sorghum/rye) so canal water soaks deep without runoff.',
+  },
+];
+
+const CUSTOM_CROP_CHOICES: { id: CustomCropId; label: string }[] = [
+  { id: 'tomatoes', label: '🍅 Tomatoes' },
+  { id: 'peppers', label: '🫑 Peppers' },
+  { id: 'potatoes', label: '🥔 Potatoes' },
+  { id: 'wheat', label: '🌾 Wheat / Barley' },
+  { id: 'corn', label: '🌽 Sweet Corn' },
+  { id: 'melons', label: '🍉 Melons / Squash' },
+  { id: 'chickpeas', label: '🫘 Chickpeas / Beans' },
+  { id: 'clover', label: '🍀 Clover & Winter Rye' },
+  { id: 'mustard', label: '🌼 Mustard & Radish Cover' },
+  { id: 'onions', label: '🧅 Onions / Garlic' },
+  { id: 'sunflower', label: '🌻 Sorghum / Sunflower' },
+  { id: 'fallow', label: '🍂 Straw Mulch Rest' },
+];
+
+const TAG_TONE_CLASSES: Record<string, string> = {
+  terracotta: 'bg-orange-100 badge-orange text-almanac-terracotta',
+  sky: 'bg-sky-100 badge-sky text-sky-800',
+  forest: 'bg-emerald-100 badge-emerald text-almanac-forest',
+  amber: 'bg-amber-100 badge-amber text-amber-800',
+};
+
+function getSoilRoleExplanation(tag: string, family: string): string {
+  const t = tag.toLowerCase();
+  const f = family.toLowerCase();
+  if (t.includes('cover') || t.includes('blanket')) {
+    return 'Cover Crop: Shields bare soil from erosion and builds winter humus.';
+  }
+  if (t.includes('bean') || t.includes('nitrogen') || f.includes('fabaceae')) {
+    return 'Nitrogen Fixer: Pulls nitrogen from air into roots for the next crop.';
+  }
+  if (t.includes('deep') || t.includes('root') || t.includes('disease') || t.includes('pest')) {
+    return 'Deep-Root / Pest Breaker: Loosens hardpan and breaks tomato wilt cycles.';
+  }
+  if (t.includes('drought')) {
+    return 'Drought-Tolerant: Thrives on leftover deep moisture with minimal watering.';
+  }
+  return 'Main Cash Crop: Needs fertile soil—avoid planting back-to-back.';
 }
 
 export function SummaryPage({
@@ -64,12 +149,15 @@ export function SummaryPage({
   fields,
   activeFieldId,
   savedPlans,
+  scanning,
   savingPlan,
   onSelectField,
   onCreateField,
   onUpdateField,
   onDeleteField,
-  onNavigate,
+  onScanLocation,
+  onChangeGoal,
+  onChangeAnchorCrop,
   onSaveCurrentPlan,
   onDeletePlan,
   onLoadSavedPlan,
@@ -77,9 +165,11 @@ export function SummaryPage({
 }: SummaryPageProps) {
   const isSun = theme === 'sun';
   const activeField = fields.find((f) => f.id === activeFieldId) || fields[0];
-  const { quickTip, soil, location, feeds, trajectory, radar, rainfallPredictor, survivalPredictor } = data;
+  const { quickTip, soil, location, feeds, trajectory, radar, rainfallPredictor, survivalPredictor, rotationPlan } =
+    data;
   const snap = quickTip.metricsSnapshot;
 
+  // Plot CRUD drawer state
   const [showPlotForm, setShowPlotForm] = useState(false);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [plotName, setPlotName] = useState('');
@@ -90,6 +180,68 @@ export function SummaryPage({
   const [savingPlot, setSavingPlot] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Compact Location + Rotation state (persisted)
+  const savedRotationInputs = readStorage<{
+    waterSetup?: WaterSetup;
+    customCrops?: [CustomCropId, CustomCropId, CustomCropId, CustomCropId];
+  }>(STORAGE_KEYS.ROTATION_INPUTS, {});
+
+  const [searchText, setSearchText] = useState(location.name);
+  const [waterSetup, setWaterSetup] = useState<WaterSetup>(savedRotationInputs.waterSetup ?? 'drip');
+  const [customCrops, setCustomCrops] = useState<[CustomCropId, CustomCropId, CustomCropId, CustomCropId]>(
+    savedRotationInputs.customCrops ?? ['tomatoes', 'clover', 'chickpeas', 'wheat']
+  );
+  const [evaluation, setEvaluation] = useState<CustomRotationEvaluation | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.ROTATION_INPUTS, { waterSetup, customCrops });
+  }, [waterSetup, customCrops]);
+
+  useEffect(() => {
+    setSearchText(location.name);
+  }, [location.name]);
+
+  const runEvaluation = async (cropsToCheck: [CustomCropId, CustomCropId, CustomCropId, CustomCropId]) => {
+    setEvaluating(true);
+    try {
+      const res = await fetch('/api/rotations/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: location.name,
+          lat: location.lat,
+          lon: location.lon,
+          crops: cropsToCheck,
+        }),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as CustomRotationEvaluation;
+        setEvaluation(json);
+      }
+    } finally {
+      setEvaluating(false);
+    }
+  };
+
+  useEffect(() => {
+    runEvaluation(customCrops);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.lat, location.lon]);
+
+  const handleSubmitLocation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchText.trim() || scanning) return;
+    onScanLocation(searchText.trim());
+  };
+
+  const handleCustomCropChange = (index: 0 | 1 | 2 | 3, value: CustomCropId) => {
+    const next = [...customCrops] as [CustomCropId, CustomCropId, CustomCropId, CustomCropId];
+    next[index] = value;
+    setCustomCrops(next);
+    runEvaluation(next);
+  };
 
   const openAddPlotForm = () => {
     setEditingFieldId(null);
@@ -172,6 +324,13 @@ export function SummaryPage({
         ? 'bg-amber-100 badge-amber text-amber-800'
         : 'bg-orange-100 badge-orange text-almanac-terracotta';
 
+  const evalVerdictStyle =
+    evaluation?.verdict === 'good'
+      ? 'bg-emerald-100 badge-emerald text-almanac-forest border-almanac-forest/40'
+      : evaluation?.verdict === 'okay'
+        ? 'bg-amber-100 badge-amber text-amber-800 border-almanac-amber/40'
+        : 'bg-orange-100 badge-orange text-almanac-terracotta border-almanac-terracotta/40';
+
   const currentMoisturePct = snap.currentRootMoisturePct;
   const moistureWord =
     currentMoisturePct >= 30 ? 'Plenty of Water' : currentMoisturePct >= 22 ? 'Getting Dry' : 'Needs Water';
@@ -182,7 +341,7 @@ export function SummaryPage({
     <section className="space-y-8">
       {/* Greeting + Quick Field Selector */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pt-2">
-        <div className="space-y-3 max-w-2xl">
+        <div className="space-y-2.5 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-100/80 badge-amber border border-amber-300/60 text-amber-900 text-xs font-semibold">
             {isSun ? '☀️ Know your Farm • Warm Sunlit Almanac' : '🌙 Know your Farm • Moonlit Orbit Almanac'}
           </div>
@@ -191,18 +350,18 @@ export function SummaryPage({
               <>
                 Good day, Farmer.
                 <br />
-                Here is your simple farm plan.
+                Here is your farm &amp; crop plan.
               </>
             ) : (
               <>
                 Good evening, Farmer.
                 <br />
-                Here is your simple farm plan.
+                Here is your farm &amp; crop plan.
               </>
             )}
           </h1>
-          <p className="text-sm sm:text-base text-almanac-muted leading-relaxed">
-            Plain-language tips on when to water, whether rain is coming, if your crops are safe, and what order to plant to save water and keep your soil healthy.
+          <p className="text-sm text-almanac-muted leading-relaxed">
+            Pick your field or location, check water &amp; survival odds, and plan or test your 4-season rotation in one place.
           </p>
         </div>
 
@@ -252,49 +411,48 @@ export function SummaryPage({
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
 
-                  {fields.length > 1 &&
-                    (confirming ? (
-                      <div className="flex items-center gap-0.5 pl-0.5">
-                        <button
-                          type="button"
-                          disabled={isDeleting}
-                          onClick={() => handleConfirmDeleteField(field.id)}
-                          className="px-2 py-1 rounded-full bg-almanac-terracotta text-white text-[10px] font-bold hover:opacity-90 transition cursor-pointer flex items-center gap-1"
-                          title={`Confirm delete ${field.name}`}
-                          aria-label={`Confirm delete ${field.name}`}
-                        >
-                          <Check className="w-3 h-3" />
-                          <span>{isDeleting ? '...' : 'Delete'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(null)}
-                          className={`p-1 rounded-full transition cursor-pointer ${
-                            active
-                              ? 'text-white/85 hover:text-white hover:bg-white/15'
-                              : 'text-almanac-muted hover:text-almanac-ink hover:bg-almanac-pill'
-                          }`}
-                          title="Cancel delete"
-                          aria-label="Cancel delete"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
+                  {confirming ? (
+                    <div className="flex items-center gap-0.5 pl-0.5">
                       <button
                         type="button"
-                        onClick={() => setConfirmDeleteId(field.id)}
-                        className={`p-1.5 rounded-full transition cursor-pointer ${
+                        disabled={isDeleting}
+                        onClick={() => handleConfirmDeleteField(field.id)}
+                        className="px-2 py-1 rounded-full bg-almanac-terracotta text-white text-[10px] font-bold hover:opacity-90 transition cursor-pointer flex items-center gap-1"
+                        title={`Confirm delete ${field.name}`}
+                        aria-label={`Confirm delete ${field.name}`}
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>{isDeleting ? '...' : 'Delete'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(null)}
+                        className={`p-1 rounded-full transition cursor-pointer ${
                           active
                             ? 'text-white/85 hover:text-white hover:bg-white/15'
-                            : 'text-almanac-muted hover:text-almanac-terracotta hover:bg-almanac-pill'
+                            : 'text-almanac-muted hover:text-almanac-ink hover:bg-almanac-pill'
                         }`}
-                        title={`Delete ${field.name}`}
-                        aria-label={`Delete ${field.name}`}
+                        title="Cancel delete"
+                        aria-label="Cancel delete"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <X className="w-3 h-3" />
                       </button>
-                    ))}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(field.id)}
+                      className={`p-1.5 rounded-full transition cursor-pointer ${
+                        active
+                          ? 'text-white/85 hover:text-white hover:bg-white/15'
+                          : 'text-almanac-muted hover:text-almanac-terracotta hover:bg-almanac-pill'
+                      }`}
+                      title={`Delete ${field.name}`}
+                      aria-label={`Delete ${field.name}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -308,13 +466,51 @@ export function SummaryPage({
                 openAddPlotForm();
               }
             }}
-            className="px-3.5 py-2 rounded-full text-xs bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-almanac-ink font-semibold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            className={`rounded-full font-bold transition flex items-center gap-2 cursor-pointer whitespace-nowrap shadow-sm ${
+              fields.length === 0
+                ? 'px-5 py-3 text-sm bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white'
+                : 'px-3.5 py-2 text-xs bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-almanac-ink'
+            }`}
           >
-            <Plus className="w-3.5 h-3.5 text-almanac-forest" />
-            <span>Add Plot</span>
+            <Plus className={fields.length === 0 ? 'w-4 h-4' : 'w-3.5 h-3.5 text-almanac-forest'} />
+            <span>{fields.length === 0 ? 'Add Your Farm' : 'Add Plot'}</span>
           </button>
         </div>
       </div>
+
+      {/* Empty Farm Invitation Banner */}
+      {fields.length === 0 && !showPlotForm && (
+        <div className="bg-almanac-card border border-dashed border-almanac-forest/50 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
+              Your Farm Almanac Is Empty
+            </div>
+            <h2 className="font-serif font-bold text-lg sm:text-xl text-almanac-ink">
+              Add your farm to save plots, or virtually test planting crops right now
+            </h2>
+            <p className="text-xs text-almanac-muted leading-relaxed">
+              Enter your plot name, size, location, and main crop—or scroll slightly to virtually plant 4 seasons and see what survives, saves water, or struggles.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={openAddPlotForm}
+              className="px-4 py-2.5 rounded-2xl bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Your Farm</span>
+            </button>
+            <a
+              href="#virtual-planting-sandbox"
+              className="px-4 py-2.5 rounded-2xl bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-xs font-semibold text-almanac-ink transition flex items-center gap-1.5"
+            >
+              <Sprout className="w-4 h-4 text-almanac-forest" />
+              <span>Try Virtual Planting</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Farm Plot Drawer */}
       {showPlotForm && (
@@ -332,7 +528,7 @@ export function SummaryPage({
               </h2>
             </div>
 
-            {editingFieldId && fields.length > 1 && (
+            {editingFieldId && (
               <div>
                 {confirmDeleteId === editingFieldId ? (
                   <div className="flex items-center gap-2">
@@ -432,8 +628,8 @@ export function SummaryPage({
                 className="w-full bg-white surface-soft border border-almanac-borderDark rounded-xl px-3 py-2 text-xs text-almanac-ink"
               >
                 <option value="water">Save Water</option>
-                <option value="nitrogen">Rebuild Soil</option>
-                <option value="yield">Max Harvest</option>
+                <option value="nitrogen">Feed Soil</option>
+                <option value="pest">Stop Pests</option>
               </select>
             </div>
             <div className="flex gap-2">
@@ -456,60 +652,142 @@ export function SummaryPage({
         </form>
       )}
 
-      {/* QUICK FARMER SUMMARY & TIP */}
+      {/* COMPACT LOCATION, CROP & GOAL STRIP */}
+      <div className="bg-almanac-card border border-almanac-border rounded-3xl p-4 sm:p-5 shadow-sm space-y-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <form onSubmit={handleSubmitLocation} className="flex-1 flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-almanac-muted" />
+              <input
+                id="location-search-input"
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="City, valley, or lat, lon..."
+                autoComplete="off"
+                className="w-full bg-white surface-soft border border-almanac-borderDark focus:border-almanac-forest rounded-2xl pl-10 pr-3 py-2 text-xs sm:text-sm text-almanac-ink focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={scanning}
+              className="bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white font-bold text-xs px-4 py-2.5 rounded-2xl transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+            >
+              <Satellite className="w-3.5 h-3.5" />
+              <span>{scanning ? 'Scanning...' : 'Check Location'}</span>
+            </button>
+          </form>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {SAMPLE_REGIONS.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => {
+                  setSearchText(r.query);
+                  onScanLocation(r.query);
+                }}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                  location.name.toLowerCase().includes(r.label.toLowerCase())
+                    ? 'bg-almanac-forest btn-forest text-white'
+                    : 'bg-almanac-pill hover:bg-almanac-border text-almanac-ink'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+            <span className="px-2.5 py-1 rounded-full bg-almanac-pill border border-almanac-border font-mono text-[11px] text-almanac-muted flex items-center gap-1 tabular-nums">
+              <LocateFixed className="w-3 h-3 text-almanac-terracotta shrink-0" />
+              <span>
+                {soil.type} &middot; pH {soil.ph.toFixed(1)} &middot; {location.climateZone}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-2.5 border-t border-almanac-border/70 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="anchor-crop-select" className="text-[11px] font-mono uppercase text-almanac-muted font-bold">
+              Main Crop:
+            </label>
+            <select
+              id="anchor-crop-select"
+              value={data.anchorCrop}
+              onChange={(e) => onChangeAnchorCrop(e.target.value as AnchorCrop)}
+              className="bg-white surface-soft border border-almanac-borderDark rounded-xl px-2.5 py-1 text-xs font-bold text-almanac-terracotta cursor-pointer"
+            >
+              <option value="tomatoes">Tomatoes</option>
+              <option value="peppers">Peppers</option>
+              <option value="potatoes">Potatoes</option>
+              <option value="wheat">Winter Wheat</option>
+              <option value="corn">Sweet Corn</option>
+              <option value="melons">Melons</option>
+            </select>
+
+            <span className="text-almanac-borderDark hidden sm:inline">|</span>
+            <span className="text-[11px] font-mono uppercase text-almanac-muted font-bold">Goal:</span>
+            {GOALS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => onChangeGoal(g.id)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                  data.goal === g.id
+                    ? 'bg-almanac-forest btn-forest text-white'
+                    : 'bg-almanac-pill hover:bg-almanac-border text-almanac-ink'
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-mono uppercase text-almanac-muted font-bold">Water Setup:</span>
+            {WATER_SETUPS.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                onClick={() => setWaterSetup(w.id)}
+                title={w.tip}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition cursor-pointer ${
+                  waterSetup === w.id
+                    ? 'bg-almanac-forest btn-forest text-white'
+                    : 'bg-almanac-pill hover:bg-almanac-border text-almanac-ink'
+                }`}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* QUICK FARMER SUMMARY & 3 ACTION STEPS */}
       <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-          <div className="space-y-2 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
-                Quick Summary &bull; {location.name}
-              </span>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${verdictColor}`}>
-                {quickTip.verdictBadge}
-              </span>
-              <span className="text-xs font-mono text-almanac-muted tabular-nums">
-                Saves about <strong className="text-almanac-forest">{quickTip.estimatedWaterSavingsPct}% water</strong>
-              </span>
-            </div>
-            <h2 className="font-serif font-bold text-2xl sm:text-3xl text-almanac-ink leading-snug">
-              {quickTip.headline}
-            </h2>
-            <p className="text-sm text-almanac-muted leading-relaxed">{quickTip.summary}</p>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
+              Quick Summary &bull; {location.name}
+            </span>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${verdictColor}`}>
+              {quickTip.verdictBadge}
+            </span>
+            <span className="text-xs font-mono text-almanac-muted tabular-nums">
+              Saves about <strong className="text-almanac-forest">{quickTip.estimatedWaterSavingsPct}% water</strong>
+            </span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => onNavigate('rotations')}
-              className="bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white font-bold text-xs px-4 py-2.5 rounded-full transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
-            >
-              <Sprout className="w-3.5 h-3.5" />
-              <span>Test Your Own Rotation</span>
-            </button>
-            <button
-              onClick={() => onNavigate('telemetry')}
-              className="bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-almanac-ink font-semibold text-xs px-4 py-2.5 rounded-full transition cursor-pointer whitespace-nowrap"
-            >
-              See Charts
-            </button>
-          </div>
+          <h2 className="font-serif font-bold text-2xl sm:text-3xl text-almanac-ink leading-snug">
+            {quickTip.headline}
+          </h2>
+          <p className="text-sm text-almanac-muted leading-relaxed">
+            {quickTip.summary}{' '}
+            <span className="text-almanac-ink font-medium">
+              {WATER_SETUPS.find((w) => w.id === waterSetup)?.tip}
+            </span>
+          </p>
         </div>
 
-        {/* Planting Order Banner */}
-        <div className="bg-almanac-pill/70 border border-almanac-border rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="text-[11px] font-mono uppercase tracking-wider text-almanac-muted font-bold">
-              Best Planting Order (For Water &amp; Soil Health)
-            </div>
-            <div className="font-serif font-bold text-sm sm:text-base text-almanac-ink">
-              {quickTip.plantingOrderSummary}
-            </div>
-          </div>
-          <div className="text-xs font-mono text-almanac-muted shrink-0">
-            {soil.type} &middot; pH {soil.ph.toFixed(1)}
-          </div>
-        </div>
-
-        {/* 3 Plain-Language Action Steps */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {quickTip.doNowSteps.map((step) => (
             <div
@@ -528,9 +806,221 @@ export function SummaryPage({
         </div>
       </div>
 
+      {/* RECOMMENDED 4-SEASON PLANTING ORDER */}
+      <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-serif font-bold text-2xl text-almanac-ink">
+              Recommended 4-Season Planting Order
+            </h2>
+            <p className="text-xs sm:text-sm text-almanac-muted mt-0.5">{rotationPlan.description}</p>
+          </div>
+          <span className="px-3.5 py-1.5 rounded-full bg-emerald-100 badge-emerald text-almanac-forest text-xs font-bold tabular-nums">
+            {rotationPlan.fitScore}% Climate Fit
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {rotationPlan.seasons.map((step) => (
+            <div
+              key={step.order}
+              className="bg-white surface-soft border border-almanac-border rounded-2xl p-5 flex flex-col justify-between shadow-sm"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[10px] font-mono font-bold uppercase text-almanac-muted">
+                    {step.season}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-almanac-forest tabular-nums">
+                    Step {step.order}/4
+                  </span>
+                </div>
+                <span
+                  className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full mb-2 ${
+                    TAG_TONE_CLASSES[step.tagTone] || TAG_TONE_CLASSES.forest
+                  }`}
+                >
+                  {step.tag}
+                </span>
+                <h3 className="font-serif font-bold text-lg text-almanac-ink leading-snug">{step.crop}</h3>
+                <div className="text-[11px] font-mono text-almanac-muted mt-1">{step.plantingWindow}</div>
+                <p className="text-xs text-almanac-muted mt-2 leading-relaxed">{step.note}</p>
+                <div className="mt-2.5 bg-almanac-pill/55 border border-almanac-border/80 rounded-xl p-2.5 text-[11px] text-almanac-ink leading-snug">
+                  {getSoilRoleExplanation(step.tag, step.family)}
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-almanac-border flex items-center justify-between text-[11px] font-semibold">
+                <span className="text-almanac-muted">Water:</span>
+                <span className="text-almanac-forest tabular-nums">
+                  {waterSetup === 'rainfed' && step.waterNeed.toLowerCase().includes('drip')
+                    ? 'Rain-Fed + Mulch'
+                    : step.waterNeed}{' '}
+                  ({step.waterSavedPct}% saved)
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* TEST YOUR OWN 4-SEASON VIRTUAL PLANTING PLAN */}
+      <div
+        id="virtual-planting-sandbox"
+        className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-5 scroll-mt-24"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-almanac-border pb-4">
+          <div>
+            <span className="text-xs font-mono uppercase tracking-wider text-almanac-forest font-bold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Virtual Planting Sandbox</span>
+            </span>
+            <h2 className="font-serif font-bold text-2xl text-almanac-ink mt-0.5">
+              Virtually Plant &amp; See What Happens
+            </h2>
+            <p className="text-xs text-almanac-muted mt-0.5">
+              Pick any 4 crops in seasonal order to simulate survival odds, water saved, disease risk, and soil impact for {location.name}.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => {
+                const smartTest: [CustomCropId, CustomCropId, CustomCropId, CustomCropId] = [
+                  'tomatoes',
+                  'clover',
+                  'chickpeas',
+                  'sunflower',
+                ];
+                setCustomCrops(smartTest);
+                runEvaluation(smartTest);
+              }}
+              className="px-3.5 py-2 rounded-full bg-emerald-100 badge-emerald hover:opacity-90 text-xs font-bold text-almanac-forest transition cursor-pointer whitespace-nowrap"
+            >
+              Try Soil-Saving Mix
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const badTest: [CustomCropId, CustomCropId, CustomCropId, CustomCropId] = [
+                  'tomatoes',
+                  'tomatoes',
+                  'potatoes',
+                  'corn',
+                ];
+                setCustomCrops(badTest);
+                runEvaluation(badTest);
+              }}
+              className="px-3.5 py-2 rounded-full bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-xs font-semibold text-almanac-ink transition cursor-pointer whitespace-nowrap"
+            >
+              Try Risky Example
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {[
+            'Season 1 · Spring/Summer',
+            'Season 2 · Autumn/Winter',
+            'Season 3 · Next Spring',
+            'Season 4 · Late Summer',
+          ].map((label, idx) => (
+            <div key={label} className="bg-almanac-pill/65 border border-almanac-border rounded-2xl p-3.5 space-y-1.5">
+              <label
+                htmlFor={`custom-season-${idx}`}
+                className="block text-[11px] font-mono font-bold uppercase text-almanac-muted"
+              >
+                {label}
+              </label>
+              <select
+                id={`custom-season-${idx}`}
+                value={customCrops[idx]}
+                onChange={(e) => handleCustomCropChange(idx as 0 | 1 | 2 | 3, e.target.value as CustomCropId)}
+                className="w-full bg-white surface-soft border border-almanac-borderDark rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-almanac-ink cursor-pointer"
+              >
+                {CUSTOM_CROP_CHOICES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+
+        {evaluating && !evaluation && (
+          <div className="text-xs text-almanac-muted font-mono py-2">Checking your plan against NASA weather...</div>
+        )}
+
+        {evaluation && (
+          <div className="space-y-4">
+            <div className={`border rounded-2xl p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${evalVerdictStyle}`}>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-serif font-bold text-lg sm:text-xl">
+                  {evaluation.verdict === 'good' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
+                  {evaluation.verdict === 'okay' && <AlertTriangle className="w-5 h-5 shrink-0" />}
+                  {evaluation.verdict === 'bad' && <XCircle className="w-5 h-5 shrink-0" />}
+                  <span>{evaluation.verdictTitle}</span>
+                </div>
+                <p className="text-xs sm:text-sm opacity-90">{evaluation.willDieVerdict}</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 shrink-0 font-mono tabular-nums text-xs">
+                <div className="bg-white/75 surface-soft px-3 py-1.5 rounded-xl border border-current/15 text-center">
+                  <div className="text-[10px] uppercase opacity-75">Survival</div>
+                  <div className="font-bold text-sm">{evaluation.survivalPct}%</div>
+                </div>
+                <div className="bg-white/75 surface-soft px-3 py-1.5 rounded-xl border border-current/15 text-center">
+                  <div className="text-[10px] uppercase opacity-75">Die-Out</div>
+                  <div className="font-bold text-sm">{evaluation.dieOutRiskPct}%</div>
+                </div>
+                <div className="bg-white/75 surface-soft px-3 py-1.5 rounded-xl border border-current/15 text-center">
+                  <div className="text-[10px] uppercase opacity-75">Water</div>
+                  <div className="font-bold text-sm">
+                    {evaluation.waterImpactPct >= 0
+                      ? `Saves ${evaluation.waterImpactPct}%`
+                      : `+${Math.abs(evaluation.waterImpactPct)}%`}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-2">
+                <div className="text-xs font-bold text-almanac-forest flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>What’s Good About Your Plan</span>
+                </div>
+                <ul className="space-y-1 text-xs text-almanac-muted list-disc pl-4">
+                  {evaluation.goodPoints.map((pt) => (
+                    <li key={pt}>{pt}</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-2">
+                <div className="text-xs font-bold text-almanac-terracotta flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>What’s Risky / Could Fail</span>
+                </div>
+                {evaluation.badPoints.length === 0 ? (
+                  <p className="text-xs text-almanac-forest">
+                    No major weather, frost, or plant-disease risks spotted for {location.name}!
+                  </p>
+                ) : (
+                  <ul className="space-y-1 text-xs text-almanac-muted list-disc pl-4">
+                    {evaluation.badPoints.map((pt) => (
+                      <li key={pt}>{pt}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* PREDICTORS ROW: PLANT SURVIVAL % + UPCOMING RAINFALL */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Plant Survival / Die-Out Predictor */}
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -597,7 +1087,6 @@ export function SummaryPage({
           </div>
         </div>
 
-        {/* Rainfall Predictor */}
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4 flex flex-col justify-between">
           <div className="space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -663,7 +1152,7 @@ export function SummaryPage({
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -678,7 +1167,7 @@ export function SummaryPage({
             {Math.max(activeField?.cropStrength || 85, Math.round(snap.currentNdvi * 100))} / 100
           </div>
           <p className="text-xs text-almanac-muted leading-relaxed">
-            Satellite NDVI leaf health score is {Math.round(snap.currentNdvi * 100)}% for this time of year (higher means thicker, healthier green leaves).
+            Satellite NDVI leaf health score is {Math.round(snap.currentNdvi * 100)}% for this time of year.
           </p>
           <div className="w-full h-2.5 bg-almanac-pill rounded-full overflow-hidden">
             <div
@@ -716,51 +1205,39 @@ export function SummaryPage({
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-muted font-semibold">
-              Gentle Reminder
+              Farm Plot Status
             </span>
             <span className="px-2.5 py-0.5 rounded-full bg-orange-100 badge-orange text-almanac-terracotta text-xs font-bold">
-              {activeField?.spotsBadge || '1 Spot'}
+              {activeField?.spotsBadge || 'No Farm Added'}
             </span>
           </div>
           <div className="font-serif font-bold text-3xl sm:text-4xl text-almanac-ink">
-            {activeField?.reminderTitle || 'East Corner Dry'}
+            {activeField?.reminderTitle || 'Add Your Farm'}
           </div>
-          <p className="text-xs text-almanac-muted leading-relaxed">{activeField?.reminderNote}</p>
-          <div className="text-xs font-semibold text-almanac-terracotta pt-1">{activeField?.reminderFoot}</div>
+          <p className="text-xs text-almanac-muted leading-relaxed">
+            {activeField?.reminderNote ||
+              'Click "Add Your Farm" at the top to save your plot name, hectares, and crop focus.'}
+          </p>
+          <div className="text-xs font-semibold text-almanac-terracotta pt-1">
+            {activeField?.reminderFoot || 'Virtual crop testing is ready anytime above'}
+          </div>
         </div>
       </div>
 
-      {/* Farmer-Centered Field Reality Check */}
-      <div className="bg-almanac-pill/55 border border-almanac-border rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-        <div className="text-almanac-ink leading-relaxed">
-          <strong className="font-serif text-almanac-forest">Your eyes come first:</strong>{' '}
-          Satellites see broad 30m–9km patches and support—not replace—local experience. Always squeeze soil 10 cm deep by hand and check low frost pockets or local water gates before irrigating or transplanting.
-        </div>
-        <button
-          type="button"
-          onClick={() => onNavigate('telemetry')}
-          className="text-xs font-bold text-almanac-forest hover:underline shrink-0 cursor-pointer self-start sm:self-auto"
-        >
-          Test &ldquo;What-If&rdquo; Weather &rarr;
-        </button>
+      {/* Field Reality Check */}
+      <div className="bg-almanac-pill/55 border border-almanac-border rounded-2xl px-5 py-3.5 text-xs text-almanac-ink leading-relaxed">
+        <strong className="font-serif text-almanac-forest">Your eyes come first:</strong>{' '}
+        Satellites see broad 30m–9km patches and support—not replace—local experience. Always squeeze soil 10 cm deep by hand and check low frost pockets or local water gates before irrigating or transplanting.
       </div>
 
-      {/* Summary Graphs */}
+      {/* SUMMARY GRAPHS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-7 bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <div>
-              <h2 className="font-serif font-bold text-xl text-almanac-ink">Soil Health Over 5 Seasons</h2>
-              <p className="text-xs text-almanac-muted">
-                Rotating plants vs. planting the same crop every season
-              </p>
-            </div>
-            <button
-              onClick={() => onNavigate('rotations')}
-              className="text-xs font-bold text-almanac-forest hover:underline cursor-pointer"
-            >
-              Build Your Own Plan &rarr;
-            </button>
+          <div className="mb-4">
+            <h2 className="font-serif font-bold text-xl text-almanac-ink">Soil Health Over 5 Seasons</h2>
+            <p className="text-xs text-almanac-muted">
+              Rotating plants vs. planting the same crop every season
+            </p>
           </div>
           <NasaChart
             theme={theme}
@@ -858,7 +1335,7 @@ export function SummaryPage({
         </div>
       </div>
 
-      {/* Live Planting Window & Saved Farm Plans */}
+      {/* LIVE PLANTING WINDOW & SAVED FARM PLANS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-7 bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">

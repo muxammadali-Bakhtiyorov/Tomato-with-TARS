@@ -30,9 +30,9 @@ interface TarsRobotChatProps {
 }
 
 const QUICK_QUESTIONS = [
-  'Should I water my crops today?',
-  'Test Tomatoes → Tomatoes → Corn → Wheat',
-  'Compare my farm to Fresno, California',
+  'Hey TARS, should I water my crops today?',
+  'What happens if I plant tomatoes twice, then corn and wheat?',
+  'How does my soil compare to Fresno, California?',
   'Remember my east corner stays muddy in spring',
 ];
 
@@ -172,7 +172,7 @@ export function TarsRobotChat({
   const defaultWelcome: ChatMessage = {
     id: 'welcome',
     role: 'model',
-    text: `Hello, farmer. I'm TARS. Ask me anything about ${farmData.location.name}, test any 4-season crop rotation, compare other valleys via NASA satellites, or tell me facts about your land to remember.`,
+    text: `*happy beep-boop!* Hi friend! I'm TARS — your tiny steel-and-circuit garden buddy. 🤖🌱 Ask me about ${farmData.location.name}, try virtual crop ideas, peek at other regions via NASA satellites, or tell me quirks about your soil so I remember them!`,
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -387,9 +387,9 @@ export function TarsRobotChat({
       {
         id: 'welcome',
         role: 'model',
-        text: `Thread cleared. Your ${notes.length} local farm ${
-          notes.length === 1 ? 'note is' : 'notes are'
-        } still in memory. Ask me about ${farmData.location.name}, test a rotation, or compare another valley.`,
+        text: `*whirs happily* Fresh chat screen! My little memory tiles still hold your ${notes.length} local farm ${
+          notes.length === 1 ? 'note' : 'notes'
+        }. What should we grow or test next around ${farmData.location.name}?`,
       },
     ]);
   };
@@ -446,7 +446,7 @@ export function TarsRobotChat({
                   </span>
                 </div>
                 <div className="text-[11px] text-almanac-muted truncate">
-                  Using live NASA data + agronomy tools for {farmData.location.name}
+                  Your cheerful NASA garden robot for {farmData.location.name}
                 </div>
               </div>
             </div>
@@ -583,7 +583,7 @@ export function TarsRobotChat({
             {sending && (
               <div className="flex justify-start">
                 <div className="bg-white surface-soft border border-almanac-border text-almanac-muted rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-xs font-mono">
-                  TARS is running NASA &amp; agronomy tools...
+                  *beep-boop* Checking the sky &amp; soil for you...
                 </div>
               </div>
             )}

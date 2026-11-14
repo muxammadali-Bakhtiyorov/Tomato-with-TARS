@@ -4,7 +4,6 @@ import { AnalyticsPage } from './components/AnalyticsPage';
 import { DashboardHeader } from './components/DashboardHeader';
 import { DatasetsPage } from './components/DatasetsPage';
 import { OrbitalLanding } from './components/OrbitalLanding';
-import { RotationsPage } from './components/RotationsPage';
 import { SummaryPage } from './components/SummaryPage';
 import { TarsRobotChat } from './components/TarsRobotChat';
 import { readStorage, STORAGE_KEYS, writeStorage } from './lib/persistence';
@@ -73,16 +72,18 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
     dailyForecast: [],
   },
   survivalPredictor: {
+    cropKey: 'tomatoes',
+    cropName: 'Tomatoes',
     survivalPct: 88,
     dieOutRiskPct: 12,
-    verdictLabel: 'Checking Conditions...',
+    verdictLabel: 'Checking Tomatoes...',
     verdictTone: 'safe',
-    willSurviveSummary: 'Checking upcoming cold, heat, and soil moisture risks for your crops...',
+    willSurviveSummary: 'Checking upcoming cold, heat, and soil moisture risks for your tomatoes...',
     risks: [
-      { label: 'Soil Water', level: 'Low', detail: 'Checking root-zone moisture...' },
-      { label: 'Cold / Frost', level: 'Low', detail: 'Checking upcoming night temperatures...' },
-      { label: 'Heat Stress', level: 'Low', detail: 'Checking daytime peak heat...' },
-      { label: 'Soil Disease', level: 'Low', detail: 'Crop rotation keeps soil diseases low.' },
+      { label: 'Soil Water (Tomatoes)', level: 'Low', detail: 'Checking root-zone moisture...' },
+      { label: 'Cold / Frost (Tomatoes)', level: 'Low', detail: 'Checking upcoming night temperatures...' },
+      { label: 'Heat Stress (Tomatoes)', level: 'Low', detail: 'Checking daytime peak heat...' },
+      { label: 'Soil Disease (Tomatoes)', level: 'Low', detail: 'Crop rotation keeps soil diseases low.' },
     ],
   },
   quickTip: {
@@ -210,12 +211,16 @@ export default function App() {
 
   const [dashboardOpen, setDashboardOpen] = useState<boolean>(initialPrefs.dashboardOpen ?? false);
   const [theme, setTheme] = useState<ThemeMode>(initialPrefs.theme ?? 'moon');
-  const [activePage, setActivePage] = useState<DashboardPage>(initialPrefs.activePage ?? 'summary');
+  const [activePage, setActivePage] = useState<DashboardPage>(() => {
+    const p = initialPrefs.activePage;
+    return p === 'summary' || p === 'telemetry' || p === 'datasets' ? p : 'summary';
+  });
   const [data, setData] = useState<NasaFarmResponse>(INITIAL_FALLBACK_DATA);
-  const [fields, setFields] = useState<FarmFieldPlot[]>(() =>
-    readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, [])
-  );
-  const [activeFieldId, setActiveFieldId] = useState<string>(initialPrefs.activeFieldId ?? 'north');
+  const [fields, setFields] = useState<FarmFieldPlot[]>(() => {
+    const cached = readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, []);
+    return cached.filter((f) => f.id !== 'north' && f.id !== 'clover' && f.id !== 'river');
+  });
+  const [activeFieldId, setActiveFieldId] = useState<string>(initialPrefs.activeFieldId ?? '');
   const [savedPlans, setSavedPlans] = useState<SavedFarmPlan[]>(() =>
     readStorage<SavedFarmPlan[]>(STORAGE_KEYS.PLANS, [])
   );
@@ -271,6 +276,9 @@ export default function App() {
         lon?: number;
         goal?: RotationGoal;
         crop?: AnchorCrop;
+        farmName?: string;
+        areaHa?: number;
+        plantedDate?: string;
         showModal?: boolean;
       } = {}
     ) => {
@@ -287,6 +295,9 @@ export default function App() {
       if (typeof opts.lon === 'number') params.set('lon', String(opts.lon));
       params.set('goal', opts.goal || data.goal);
       params.set('crop', opts.crop || data.anchorCrop);
+      if (opts.farmName) params.set('farmName', opts.farmName);
+      if (typeof opts.areaHa === 'number' && opts.areaHa > 0) params.set('areaHa', String(opts.areaHa));
+      if (opts.plantedDate) params.set('plantedDate', opts.plantedDate);
 
       try {
         if (showModal) {
@@ -321,7 +332,10 @@ export default function App() {
 
   // Initial load: hydrate fields, saved plans, and live NASA telemetry (preserving saved local prefs)
   useEffect(() => {
-    const localFields = readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, []);
+    const LEGACY_SEED_IDS = new Set(['north', 'clover', 'river']);
+    const localFields = readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, []).filter(
+      (lf) => !LEGACY_SEED_IDS.has(lf.id)
+    );
     fetch('/api/fields')
       .then((r) => r.json())
       .then(async (j: { fields?: FarmFieldPlot[] }) => {
@@ -329,6 +343,7 @@ export default function App() {
         // Merge if local has user-created plots not on server (e.g. after Vercel cold start)
         const serverIds = new Set(serverFields.map((f) => f.id));
         const missingLocal = localFields.filter((lf) => !serverIds.has(lf.id));
+        let resolvedFields = serverFields;
         if (missingLocal.length > 0) {
           let latestFields = serverFields;
           for (const mf of missingLocal) {
@@ -341,6 +356,7 @@ export default function App() {
                 locationQuery: mf.locationQuery,
                 anchorCrop: mf.anchorCrop,
                 goal: mf.goal,
+                plantedDate: mf.plantedDate,
               }),
             }).catch(() => null);
             if (postRes && postRes.ok) {
@@ -350,17 +366,49 @@ export default function App() {
               }
             }
           }
-          setFields(latestFields);
-          writeStorage(STORAGE_KEYS.FIELDS, latestFields);
-        } else if (serverFields.length > 0) {
-          setFields(serverFields);
-          writeStorage(STORAGE_KEYS.FIELDS, serverFields);
-          if (!initialPrefs.activeFieldId) {
-            setActiveFieldId(serverFields[0].id);
-          }
+          resolvedFields = latestFields;
+        }
+
+        setFields(resolvedFields);
+        writeStorage(STORAGE_KEYS.FIELDS, resolvedFields);
+
+        if (resolvedFields.length > 0) {
+          const matchedActive =
+            resolvedFields.find((f) => f.id === initialPrefs.activeFieldId) || resolvedFields[0];
+          setActiveFieldId(matchedActive.id);
+          fetchTelemetry({
+            q: matchedActive.locationQuery,
+            lat: matchedActive.lat,
+            lon: matchedActive.lon,
+            goal: matchedActive.goal,
+            crop: matchedActive.anchorCrop,
+            farmName: matchedActive.name,
+            areaHa: matchedActive.areaHa,
+            plantedDate: matchedActive.plantedDate,
+            showModal: false,
+          });
+        } else {
+          setActiveFieldId('');
+          fetchTelemetry({
+            q: initialPrefs.locationQuery || 'Tashkent Valley, Uzbekistan',
+            lat: initialPrefs.lat,
+            lon: initialPrefs.lon,
+            goal: initialPrefs.goal || 'water',
+            crop: initialPrefs.anchorCrop || 'tomatoes',
+            showModal: false,
+          });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        fetchTelemetry({
+          q: initialPrefs.locationQuery || 'Tashkent Valley, Uzbekistan',
+          lat: initialPrefs.lat,
+          lon: initialPrefs.lon,
+          goal: initialPrefs.goal || 'water',
+          crop: initialPrefs.anchorCrop || 'tomatoes',
+          showModal: false,
+        });
+      });
 
     const localPlans = readStorage<SavedFarmPlan[]>(STORAGE_KEYS.PLANS, []);
     fetch('/api/plans')
@@ -373,15 +421,6 @@ export default function App() {
         writeStorage(STORAGE_KEYS.PLANS, merged);
       })
       .catch(() => {});
-
-    fetchTelemetry({
-      q: initialPrefs.locationQuery || 'Tashkent Valley, Uzbekistan',
-      lat: initialPrefs.lat,
-      lon: initialPrefs.lon,
-      goal: initialPrefs.goal || 'water',
-      crop: initialPrefs.anchorCrop || 'tomatoes',
-      showModal: false,
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -464,6 +503,9 @@ export default function App() {
       lon: field.lon,
       goal: field.goal,
       crop: field.anchorCrop,
+      farmName: field.name,
+      areaHa: field.areaHa,
+      plantedDate: field.plantedDate,
       showModal: true,
     });
   };
@@ -474,6 +516,7 @@ export default function App() {
     locationQuery: string;
     anchorCrop: AnchorCrop;
     goal: RotationGoal;
+    plantedDate?: string;
   }) => {
     const res = await fetch('/api/fields', {
       method: 'POST',
@@ -488,26 +531,30 @@ export default function App() {
     setFields(json.fields);
     writeStorage(STORAGE_KEYS.FIELDS, json.fields);
     setActiveFieldId(json.field.id);
-    showToast(`Added plot: ${json.field.name}`);
+    showToast(`Added farm: ${json.field.name}`);
     await fetchTelemetry({
       q: json.field.locationQuery,
       lat: json.field.lat,
       lon: json.field.lon,
       goal: json.field.goal,
       crop: json.field.anchorCrop,
+      farmName: json.field.name,
+      areaHa: json.field.areaHa,
+      plantedDate: json.field.plantedDate,
       showModal: true,
     });
   };
 
   const handleUpdateField = async (
     id: string,
-    payload: {
+    payload: Partial<{
       name: string;
       areaHa: number;
       locationQuery: string;
       anchorCrop: AnchorCrop;
       goal: RotationGoal;
-    }
+      plantedDate: string;
+    }>
   ) => {
     const res = await fetch(`/api/fields/${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -529,16 +576,15 @@ export default function App() {
         lon: json.field.lon,
         goal: json.field.goal,
         crop: json.field.anchorCrop,
-        showModal: true,
+        farmName: json.field.name,
+        areaHa: json.field.areaHa,
+        plantedDate: json.field.plantedDate,
+        showModal: false,
       });
     }
   };
 
   const handleDeleteField = async (id: string) => {
-    if (fields.length <= 1) {
-      showToast('Keep at least 1 farm plot in your almanac');
-      return;
-    }
     const res = await fetch(`/api/fields/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!res.ok) {
       showToast('Could not delete farm plot');
@@ -547,18 +593,25 @@ export default function App() {
     const json = (await res.json()) as { fields: FarmFieldPlot[] };
     setFields(json.fields);
     writeStorage(STORAGE_KEYS.FIELDS, json.fields);
-    showToast('Farm plot deleted');
-    if (id === activeFieldId && json.fields.length > 0) {
-      const next = json.fields[0];
-      setActiveFieldId(next.id);
-      await fetchTelemetry({
-        q: next.locationQuery,
-        lat: next.lat,
-        lon: next.lon,
-        goal: next.goal,
-        crop: next.anchorCrop,
-        showModal: false,
-      });
+    showToast('Farm plot removed');
+    if (id === activeFieldId) {
+      if (json.fields.length > 0) {
+        const next = json.fields[0];
+        setActiveFieldId(next.id);
+        await fetchTelemetry({
+          q: next.locationQuery,
+          lat: next.lat,
+          lon: next.lon,
+          goal: next.goal,
+          crop: next.anchorCrop,
+          farmName: next.name,
+          areaHa: next.areaHa,
+          plantedDate: next.plantedDate,
+          showModal: false,
+        });
+      } else {
+        setActiveFieldId('');
+      }
     }
   };
 
@@ -696,49 +749,54 @@ export default function App() {
                 fields={fields}
                 activeFieldId={activeFieldId}
                 savedPlans={savedPlans}
+                scanning={scanning}
                 savingPlan={savingPlan}
                 onSelectField={handleSelectField}
                 onCreateField={handleCreateField}
                 onUpdateField={handleUpdateField}
                 onDeleteField={handleDeleteField}
-                onNavigate={(p) => {
-                  setActivePage(p);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                onScanLocation={(query) => {
+                  const af = fields.find((f) => f.id === activeFieldId);
+                  return fetchTelemetry({
+                    q: query,
+                    farmName: af?.name,
+                    areaHa: af?.areaHa,
+                    plantedDate: af?.plantedDate,
+                    showModal: true,
+                  });
                 }}
-                onSaveCurrentPlan={handleSaveCurrentPlan}
-                onDeletePlan={handleDeletePlan}
-                onLoadSavedPlan={handleLoadSavedPlan}
-                onExportJson={handleExportJson}
-              />
-            )}
-
-            {activePage === 'rotations' && (
-              <RotationsPage
-                data={data}
-                scanning={scanning}
-                savingPlan={savingPlan}
-                onScanLocation={(query) => fetchTelemetry({ q: query, showModal: true })}
-                onChangeGoal={(goal) =>
+                onChangeGoal={(goal) => {
+                  const af = fields.find((f) => f.id === activeFieldId);
                   fetchTelemetry({
                     q: data.location.name,
                     lat: data.location.lat,
                     lon: data.location.lon,
                     goal,
                     crop: data.anchorCrop,
+                    farmName: af?.name,
+                    areaHa: af?.areaHa,
+                    plantedDate: af?.plantedDate,
                     showModal: false,
-                  })
-                }
-                onChangeAnchorCrop={(crop) =>
+                  });
+                }}
+                onChangeAnchorCrop={(crop) => {
+                  const af = fields.find((f) => f.id === activeFieldId);
                   fetchTelemetry({
                     q: data.location.name,
                     lat: data.location.lat,
                     lon: data.location.lon,
                     goal: data.goal,
                     crop,
+                    farmName: af?.name,
+                    areaHa: af?.areaHa,
+                    plantedDate: af?.plantedDate,
                     showModal: false,
-                  })
-                }
-                onSavePlan={handleSaveCurrentPlan}
+                  });
+                }}
+                onSaveCurrentPlan={handleSaveCurrentPlan}
+                onDeletePlan={handleDeletePlan}
+                onLoadSavedPlan={handleLoadSavedPlan}
+                onExportJson={handleExportJson}
               />
             )}
 

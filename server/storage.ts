@@ -14,87 +14,24 @@ const DATA_DIR =
     : path.resolve(process.cwd(), 'data');
 const STORE_PATH = path.join(DATA_DIR, 'farm-almanac.json');
 
-const DEFAULT_FIELDS: FarmFieldPlot[] = [
-  {
-    id: 'north',
-    name: 'North Tomatoes',
-    emoji: '🍅',
-    areaHa: 120,
-    locationQuery: 'Tashkent Valley, Uzbekistan',
-    lat: 41.2995,
-    lon: 69.2401,
-    anchorCrop: 'tomatoes',
-    goal: 'water',
-    cropStrength: 92,
-    soilMoisturePct: 34,
-    healthBadge: 'Healthy',
-    moistureBadge: 'Just Right',
-    spotsBadge: '1 Spot',
-    reminderTitle: 'East Corner Dry',
-    reminderNote:
-      'The slope on the east side is slightly drier than the rest. Worth a quick look on your morning walk.',
-    reminderFoot: 'Light evening breeze • 21°C tonight',
-  },
-  {
-    id: 'clover',
-    name: 'Clover Cover',
-    emoji: '🌿',
-    areaHa: 65,
-    locationQuery: 'Fergana Basin, Uzbekistan',
-    lat: 40.3842,
-    lon: 71.7843,
-    anchorCrop: 'peppers',
-    goal: 'nitrogen',
-    cropStrength: 88,
-    soilMoisturePct: 31,
-    healthBadge: 'Healthy',
-    moistureBadge: 'Comfortable',
-    spotsBadge: '0 Spots',
-    reminderTitle: 'All Clear',
-    reminderNote:
-      'Moisture is even across the plot and the clover cover is thick. Nothing needs attention today.',
-    reminderFoot: 'Calm evening • 19°C tonight',
-  },
-  {
-    id: 'river',
-    name: 'Riverbank Rotation',
-    emoji: '🌾',
-    areaHa: 80,
-    locationQuery: 'Central Valley, California',
-    lat: 36.7783,
-    lon: -119.4179,
-    anchorCrop: 'wheat',
-    goal: 'pest',
-    cropStrength: 95,
-    soilMoisturePct: 38,
-    healthBadge: 'Thriving',
-    moistureBadge: 'Well Watered',
-    spotsBadge: '1 Note',
-    reminderTitle: 'Nitrogen Rich',
-    reminderNote:
-      'Soil nitrogen is high after last season’s legumes. You can likely skip extra fertilizer this round.',
-    reminderFoot: 'Mild river breeze • 18°C tonight',
-  },
-];
-
 function ensureStore(): AlmanacStore {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!fs.existsSync(STORE_PATH)) {
-    const initial: AlmanacStore = { fields: DEFAULT_FIELDS, plans: [], notes: [] };
+    const initial: AlmanacStore = { fields: [], plans: [], notes: [] };
     fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), 'utf8');
     return initial;
   }
   try {
     const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as Partial<AlmanacStore>;
     return {
-      fields: Array.isArray(parsed.fields) && parsed.fields.length > 0 ? parsed.fields : DEFAULT_FIELDS,
+      fields: Array.isArray(parsed.fields) ? parsed.fields : [],
       plans: Array.isArray(parsed.plans) ? parsed.plans : [],
       notes: Array.isArray(parsed.notes) ? parsed.notes : [],
     };
   } catch {
-    const fallback: AlmanacStore = { fields: DEFAULT_FIELDS, plans: [], notes: [] };
+    const fallback: AlmanacStore = { fields: [], plans: [], notes: [] };
     fs.writeFileSync(STORE_PATH, JSON.stringify(fallback, null, 2), 'utf8');
     return fallback;
   }
@@ -112,7 +49,10 @@ export function listFields(): FarmFieldPlot[] {
 }
 
 export function addFieldPlot(
-  input: Pick<FarmFieldPlot, 'name' | 'areaHa' | 'locationQuery' | 'lat' | 'lon' | 'anchorCrop' | 'goal'>
+  input: Pick<
+    FarmFieldPlot,
+    'name' | 'areaHa' | 'locationQuery' | 'lat' | 'lon' | 'anchorCrop' | 'goal' | 'plantedDate'
+  >
 ): FarmFieldPlot {
   const store = ensureStore();
   const emojiMap: Record<string, string> = {
@@ -133,6 +73,7 @@ export function addFieldPlot(
     lon: input.lon,
     anchorCrop: input.anchorCrop,
     goal: input.goal,
+    plantedDate: input.plantedDate || undefined,
     cropStrength: 90,
     soilMoisturePct: 32,
     healthBadge: 'Monitored',
@@ -149,7 +90,12 @@ export function addFieldPlot(
 
 export function updateFieldPlot(
   id: string,
-  input: Partial<Pick<FarmFieldPlot, 'name' | 'areaHa' | 'locationQuery' | 'lat' | 'lon' | 'anchorCrop' | 'goal'>>
+  input: Partial<
+    Pick<
+      FarmFieldPlot,
+      'name' | 'areaHa' | 'locationQuery' | 'lat' | 'lon' | 'anchorCrop' | 'goal' | 'plantedDate'
+    >
+  >
 ): FarmFieldPlot | null {
   const store = ensureStore();
   const idx = store.fields.findIndex((f) => f.id === id);
@@ -177,6 +123,8 @@ export function updateFieldPlot(
     lon: typeof input.lon === 'number' ? input.lon : existing.lon,
     anchorCrop: nextCrop,
     goal: input.goal ?? existing.goal,
+    plantedDate:
+      input.plantedDate !== undefined ? input.plantedDate || undefined : existing.plantedDate,
     emoji: emojiMap[nextCrop] || existing.emoji,
     reminderNote:
       input.locationQuery && input.locationQuery !== existing.locationQuery
@@ -191,8 +139,6 @@ export function updateFieldPlot(
 
 export function removeFieldPlot(id: string): FarmFieldPlot[] {
   const store = ensureStore();
-  // Keep at least 1 field
-  if (store.fields.length <= 1) return store.fields;
   store.fields = store.fields.filter((f) => f.id !== id);
   writeStore(store);
   return store.fields;

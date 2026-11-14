@@ -147,8 +147,8 @@ function loadKnowledgeSections(): KnowledgeSection[] {
 }
 
 /**
- * Detects brief casual greetings or pleasantries that do not need heavy
- * agronomy KB injection or satellite telemetry dumps.
+ * Detects brief casual greetings, jokes, or small talk that do not ask about
+ * crops, soil, weather, NASA telemetry, or rotations.
  */
 export function isCasualGreeting(rawText: string): boolean {
   const normalized = rawText
@@ -157,14 +157,19 @@ export function isCasualGreeting(rawText: string): boolean {
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!normalized || normalized.length > 42) return false;
+  if (!normalized || normalized.length > 70) return false;
+
+  // Never treat as casual if the user mentions any farm, crop, weather, or memory topic
+  const farmKeywords =
+    /\b(farm|crop|plant|soil|water|rain|moisture|temp|frost|heat|tomato|pepper|potato|wheat|corn|melon|chickpea|clover|mustard|onion|sunflower|rotat|season|nasa|ndvi|smap|ph|plot|field|remember|note|yield|pest|blight|compare|city|valley|grow|seed|harvest|fertili|mulch|drip)\b/;
+  if (farmKeywords.test(normalized)) return false;
 
   const greetingPatterns = [
-    /^(hi|hello|hey|yo|hiya|sup|howdy|greetings)(\s+tars)?(\s+there)?$/,
-    /^(good\s+(morning|afternoon|evening|day))(\s+tars)?$/,
-    /^(how\s+are\s+you|how\s+is\s+it\s+going|whats\s+up|what\s+is\s+up)(\s+tars)?$/,
-    /^(thanks|thank\s+you|thx|ty|ok|okay|cool|nice|got\s+it|bye|goodbye)(\s+tars)?$/,
-    /^(who\s+are\s+you|what\s+can\s+you\s+do|help)$/,
+    /^(hi|hello|hey|yo|hiya|sup|howdy|greetings|hii+|heyy+)(\s+tars)?(\s+there)?(\s+buddy)?$/,
+    /^(good\s+(morning|afternoon|evening|day|night))(\s+tars)?$/,
+    /^(how\s+are\s+you|how\s+r\s+u|hows\s+it\s+going|how\s+is\s+it\s+going|whats\s+up|what\s+is\s+up|how\s+you\s+doing)(\s+tars)?$/,
+    /^(thanks|thank\s+you|thx|ty|ok|okay|cool|nice|awesome|cute|haha|lol|got\s+it|bye|goodbye)(\s+tars)?$/,
+    /^(who\s+are\s+you|what\s+are\s+you|what\s+can\s+you\s+do|tell\s+me\s+a\s+joke|humor\s+setting|help)(\s+tars)?$/,
   ];
 
   return greetingPatterns.some((re) => re.test(normalized));

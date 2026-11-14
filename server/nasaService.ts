@@ -13,12 +13,14 @@ export interface ResolvedLocation {
   lon: number;
   coordsLabel: string;
   climateZone: 'Arid' | 'Semi-Arid' | 'Temperate' | 'Humid';
+  countryCode?: string;
+  countryName?: string;
   presetKey?: string;
 }
 
 export const REGION_PRESETS: Record<
   string,
-  { name: string; lat: number; lon: number; soil: string; ph: number }
+  { name: string; lat: number; lon: number; soil: string; ph: number; countryCode: string; countryName: string }
 > = {
   tashkent: {
     name: 'Tashkent Valley, Uzbekistan',
@@ -26,6 +28,8 @@ export const REGION_PRESETS: Record<
     lon: 69.2401,
     soil: 'Silty Clay Loam',
     ph: 7.4,
+    countryCode: 'UZ',
+    countryName: 'Uzbekistan',
   },
   fergana: {
     name: 'Fergana Basin, Uzbekistan',
@@ -33,6 +37,8 @@ export const REGION_PRESETS: Record<
     lon: 71.7843,
     soil: 'Alluvial Loam',
     ph: 7.2,
+    countryCode: 'UZ',
+    countryName: 'Uzbekistan',
   },
   california: {
     name: 'Central Valley, California',
@@ -40,6 +46,8 @@ export const REGION_PRESETS: Record<
     lon: -119.4179,
     soil: 'Sandy Loam',
     ph: 6.8,
+    countryCode: 'US',
+    countryName: 'United States',
   },
   alentejo: {
     name: 'Alentejo Plains, Portugal',
@@ -47,6 +55,8 @@ export const REGION_PRESETS: Record<
     lon: -7.9,
     soil: 'Mediterranean Loam',
     ph: 7.5,
+    countryCode: 'PT',
+    countryName: 'Portugal',
   },
 };
 
@@ -116,6 +126,8 @@ export async function resolveLocation(
         lon: preset.lon,
         coordsLabel: formatCoords(preset.lat, preset.lon),
         climateZone: 'Semi-Arid',
+        countryCode: preset.countryCode,
+        countryName: preset.countryName,
         presetKey: key,
       };
     }
@@ -145,7 +157,14 @@ export async function resolveLocation(
       );
       if (geoRes.ok) {
         const geoJson = (await geoRes.json()) as {
-          results?: Array<{ name: string; admin1?: string; country?: string; latitude: number; longitude: number }>;
+          results?: Array<{
+            name: string;
+            admin1?: string;
+            country?: string;
+            country_code?: string;
+            latitude: number;
+            longitude: number;
+          }>;
         };
         const place = geoJson.results?.[0];
         if (place) {
@@ -156,6 +175,8 @@ export async function resolveLocation(
             lon: place.longitude,
             coordsLabel: formatCoords(place.latitude, place.longitude),
             climateZone: 'Semi-Arid',
+            countryCode: place.country_code,
+            countryName: place.country,
           };
         }
       }
@@ -171,6 +192,8 @@ export async function resolveLocation(
     lon: fallback.lon,
     coordsLabel: formatCoords(fallback.lat, fallback.lon),
     climateZone: 'Semi-Arid',
+    countryCode: fallback.countryCode,
+    countryName: fallback.countryName,
     presetKey: 'tashkent',
   };
 }

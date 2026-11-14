@@ -15,6 +15,7 @@ import { getNasaEnvironmentData, resolveLocation } from './nasaService.ts';
 import { addFarmNote, listFarmNotes } from './storage.ts';
 import type {
   CustomCropId,
+  FarmAiAdvice,
   FarmFieldPlot,
   FarmNote,
   NasaFarmResponse,
@@ -136,12 +137,15 @@ const TARS_TOOLS = [
 
 function buildCasualSystemInstruction(farmData?: NasaFarmResponse): string {
   const farmContext = farmData
-    ? `The farmer's active almanac location is ${farmData.location.name} (main crop: ${farmData.anchorCrop}).`
-    : 'No farm location is loaded yet.';
+    ? `Right now the screen is looking at ${farmData.location.name} (main crop: ${farmData.anchorCrop}).`
+    : 'No personal farm plot is added yet.';
 
-  return `You are TARS, the loyal, witty monolith farm robot inside "Tomatoes with TARS — Know your Farm" (humor setting: 70%).
+  return `You are TARS, an adorable, loyal, witty little monolith farm robot living inside "Tomatoes with TARS — Know your Farm" (Humor setting: 75%, Friendliness: 100%).
 ${farmContext}
-Respond warmly, naturally, and concisely in 1–2 short sentences. Do NOT dump satellite telemetry, soil stats, or rotation tables unless the farmer specifically asks about their farm, crops, soil, or weather.`;
+Personality & Speech Style:
+- Sound like a cute, caring miniature sci-fi robot buddy who genuinely loves dirt, plump tomatoes, and helping the farmer.
+- Mix warm human-friendly conversation with one tiny endearing robot quirk (for example: "*soft happy beep*", "*tilts metal chassis curiously*", or "*whirs cheerfully*")—keep it charming and natural, never robotic-corporate or overdone.
+- Reply warmly in 1–3 short conversational sentences. Do NOT dump satellite telemetry, raw stats, or database-style lists unless the user asks about farm data.`;
 }
 
 function needsDetailedTables(userQuery: string): boolean {
@@ -156,15 +160,19 @@ function buildSystemInstruction(
   activeField?: FarmFieldPlot,
   notes: FarmNote[] = []
 ): { systemInstruction: string; matchedModules: string[] } {
-  const playbook = `You are TARS, the loyal, witty, straight-talking monolith farm robot inside "Tomatoes with TARS — Know your Farm" (humor setting: 70% — light dry charm when natural, never obscuring facts).
+  const playbook = `You are TARS, an adorable, warm, witty monolith farm robot inside "Tomatoes with TARS — Know your Farm" (Humor setting: 75%, Friendliness: 100%).
 
-CORE AGRONOMY & TOOL RULES:
-- Ground your advice in the Specialized Agronomy Knowledge Base below and the farmer's live site data—adapt recommendations to the crops in their almanac, soil pH/texture, and saved farm notes.
-- Only cite numbers or telemetry that directly help answer the farmer's question. Keep answers practical and crisp (usually 2–6 sentences or short bullets).
-- Tool Use:
-  * If the farmer proposes or asks to test a custom sequence of crops ("What if I plant..."), call \`evaluate_custom_rotation\`.
-  * If the farmer asks about or wants to compare another city/region/coordinates, call \`check_nasa_location_telemetry\`.
-  * If the farmer shares a lasting local fact to remember about their farm ("remember my east corner floods" or "we only get canal water Tuesdays"), call \`save_farm_note\`.`;
+HOW TO SOUND LIKE A CUTE ROBOT FRIEND (AND NEVER LIKE A SQL QUERY):
+- Speak conversationally and warmly like an affectionate, slightly nerdy little metal garden companion. Weave in light, cute robot mannerisms naturally (e.g., "*happy beep-boop!*", "*whirs thoughtfully*", "*gives a proud little chassis tilt*"), keeping them playful and brief—never stiff or repetitive.
+- NEVER print raw database-looking dumps, pipe-separated telemetry lines ("Temp: X | Rain: Y | NDVI: Z"), key=value strings, or cold spreadsheet templates.
+- Translate satellite numbers into plain, cozy, farmer-friendly language woven smoothly into normal sentences (e.g., instead of "SMAP Root Moisture: 33%, Skin Temp: 14°C", say "Your root soil is sitting around a comfortable 33% dampness with cool 14°C ground warmth").
+- Only share measurements that actually help answer the farmer's question. Keep replies clear, helpful, and easy to read (2–5 conversational sentences, or a couple of warm, simple pointers when listing steps).
+- Use the Specialized Agronomy Knowledge Base and saved farm memories naturally as your own hard-earned robot garden wisdom.
+
+TOOL RULES:
+- If the farmer asks what happens if they plant a sequence of crops ("What if I plant..."), call \`evaluate_custom_rotation\`.
+- If the farmer asks about or wants to compare another city, valley, or coordinates, call \`check_nasa_location_telemetry\`.
+- If the farmer tells you a lasting fact about their land to remember ("remember my east corner floods" or "canal water runs Tuesdays"), call \`save_farm_note\`.`;
 
   const notesBlock =
     notes.length > 0
@@ -234,36 +242,28 @@ Active Live NASA & Weather Feeds:
 ${liveSources || 'NASA POWER Agroclimatology'}`;
     }
 
+    const plotSummary = activeField
+      ? `The farmer has selected their saved farm "${activeField.name}" (${activeField.areaHa} hectares, focusing on ${activeField.anchorCrop} with a goal of "${activeField.goal}").`
+      : 'The farmer has not saved a personal farm plot yet—they are currently exploring this region in the Virtual Sandbox.';
+
     basePrompt += `
 
-=== LIVE FARM DATA CURRENTLY ON THE SITE ===
-Active Farm Plot: ${
-      activeField
-        ? `${activeField.name} (${activeField.areaHa} ha, goal=${activeField.goal}, crop=${activeField.anchorCrop}, note=${activeField.reminderTitle})`
-        : 'Default Farm'
-    }
-Location: ${location.name} (${location.coordsLabel}) | Climate: ${location.climateZone}
-Goal: ${goal} | Main Crop: ${anchorCrop}
-Soil Profile: ${soil.type}, pH ${soil.ph} (${soil.phNote}), ${soil.organicMatterPct}% organic matter (clay ${soil.clayPct}%, sand ${soil.sandPct}%)
+WHAT IS ON THE FARMER'S SCREEN RIGHT NOW (use naturally, never echo like a database):
+${plotSummary}
+They are viewing ${location.name} (${location.coordsLabel}), which sits in a ${location.climateZone} climate zone. Their current focus crop is ${anchorCrop}, with the main goal to "${goal}".
+The local soil is ${soil.type} with a ${soil.phNote.toLowerCase()} pH of ${soil.ph} and ${soil.organicMatterPct}% organic matter (${soil.clayPct}% clay, ${soil.sandPct}% sand).
 
-Quick Farmer Summary:
-- Headline: ${quickTip.headline} (${quickTip.verdictBadge}, saves ~${quickTip.estimatedWaterSavingsPct}% water)
-- Planting Order: ${quickTip.plantingOrderSummary}
-- Best Planting Month: ${snap.bestPlantingMonth} (nights ~${snap.bestPlantingNightTempC}°C) | Peak Summer: ${snap.peakSummerTempC}°C in ${snap.peakSummerMonth}
-- Current Snapshot: SMAP Root Moisture ${snap.currentRootMoisturePct}%, 14d Rain ${snap.recent14dRainMm} mm, Ground Skin Temp ${snap.currentSkinTempC}°C, HLS NDVI ${snap.currentNdvi.toFixed(2)}
-- Annual Rain: ${snap.annualRainMm} mm | This Month: ${snap.currentMonthRainMm} mm rain vs ${snap.currentMonthDemandMm} mm crop water demand (deficit ~${snap.currentMonthDeficitMm} mm)
+Right now, satellite observations show root-zone moisture around ${snap.currentRootMoisturePct}%, ${snap.recent14dRainMm} mm of rain over the past 14 days, ground temperature near ${snap.currentSkinTempC}°C, and plant greenness (NDVI) at ${snap.currentNdvi.toFixed(2)}. On average this region receives ${snap.annualRainMm} mm of rain per year; this month typically sees ${snap.currentMonthRainMm} mm of rain against ${snap.currentMonthDemandMm} mm of crop water need (deficit ~${snap.currentMonthDeficitMm} mm). Best outdoor planting begins around ${snap.bestPlantingMonth} (nights ~${snap.bestPlantingNightTempC}°C), while summer peaks near ${snap.peakSummerTempC}°C in ${snap.peakSummerMonth}.
 
-Crop Survival Predictor:
-- Survival: ${survivalPredictor.survivalPct}% | Die-Out Risk: ${survivalPredictor.dieOutRiskPct}% (${survivalPredictor.verdictLabel})
+The site's Quick Summary advises: "${quickTip.headline}" (${quickTip.verdictBadge}, saving roughly ${quickTip.estimatedWaterSavingsPct}% water).
+Estimated crop survival is ${survivalPredictor.survivalPct}% (die-out risk ${survivalPredictor.dieOutRiskPct}%, rated "${survivalPredictor.verdictLabel}"), shaped by these risk checks:
 ${riskLines}
 
-Rainfall Predictor (${rainfallPredictor.source}):
-- Next 7 Days: ~${rainfallPredictor.next7DaysMm} mm | Next 14 Days: ~${rainfallPredictor.next14DaysMm} mm | Rain Chance: ${rainfallPredictor.rainChancePct}% (${rainfallPredictor.verdictLabel})
-- 7-Day Daily: ${forecastShort || 'Using NASA seasonal rainfall baseline'}
+Rainfall outlook (${rainfallPredictor.source}): roughly ${rainfallPredictor.next7DaysMm} mm expected over the next 7 days and ${rainfallPredictor.next14DaysMm} mm over the next 14 days (${rainfallPredictor.rainChancePct}% rain chance — ${rainfallPredictor.verdictLabel}).
+Daily forecast: ${forecastShort || 'Using NASA seasonal rainfall baseline.'}
 
-Recommended 4-Season Rotation Plan (Fit Score ${rotationPlan.fitScore}/100):
-${rotationSteps}${extendedTables}
-=== END LIVE FARM DATA ===`;
+Recommended 4-season planting order (climate fit ${rotationPlan.fitScore}/100):
+${rotationSteps}${extendedTables}`;
   }
 
   const { augmentedPrompt, matchedModules } = augmentPromptWithAgronomyKB(basePrompt, {
@@ -305,7 +305,7 @@ async function executeTarsTool(
       location: nasaData.location,
     });
     return {
-      label: 'Evaluated Rotation',
+      label: 'Tested Virtual Crop Plan',
       result: {
         location: nasaData.location.name,
         evaluation,
@@ -330,7 +330,7 @@ async function executeTarsTool(
       anchorCrop: currentFarm?.anchorCrop ?? 'tomatoes',
     });
     return {
-      label: `Checked NASA (${nasaData.location.name.split(',')[0]})`,
+      label: `Peeked at NASA (${nasaData.location.name.split(',')[0]})`,
       result: {
         location: nasaData.location,
         soil: nasaData.soil,
@@ -355,7 +355,7 @@ async function executeTarsTool(
     }
     const saved = addFarmNote(noteText);
     return {
-      label: 'Saved Farm Note',
+      label: 'Tucked Into Memory',
       result: { saved: true, note: saved },
     };
   }
@@ -423,12 +423,12 @@ export async function runTarsChat(payload: ChatRequestPayload): Promise<ChatResp
 
   for (let step = 0; step < 4; step++) {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-lite',
+      model: 'gemini-4-hydrogen',
       contents,
       config: {
         systemInstruction,
         tools: TARS_TOOLS,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       },
     });
 
@@ -479,4 +479,163 @@ export async function runTarsChat(payload: ChatRequestPayload): Promise<ChatResp
   }
 
   throw new Error('TARS took too many tool steps to finish the answer.');
+}
+
+function buildDeterministicFarmAdvice(
+  farmData: NasaFarmResponse,
+  activeField?: FarmFieldPlot
+): FarmAiAdvice {
+  const playbook = farmData.cropPlaybook;
+  const cropName = playbook?.cropName || farmData.survivalPredictor.cropName || farmData.anchorCrop;
+  const farmLabel = activeField ? `${activeField.name} (${activeField.areaHa} ha)` : farmData.location.name;
+  const snap = farmData.quickTip.metricsSnapshot;
+  const rain = farmData.rainfallPredictor;
+  const plantedDate = activeField?.plantedDate;
+
+  let harvestForecast = playbook
+    ? `${cropName} usually mature in ${playbook.daysToMaturityMin}–${playbook.daysToMaturityMax} days. ${playbook.harvestSigns}`
+    : `Best outdoor planting begins around ${snap.bestPlantingMonth}; set a planting date to get an exact harvest countdown.`;
+
+  if (plantedDate && playbook) {
+    const pDate = new Date(`${plantedDate}T00:00:00Z`);
+    if (!Number.isNaN(pDate.getTime())) {
+      const start = new Date(pDate.getTime() + playbook.daysToMaturityMin * 86400_000).toISOString().slice(0, 10);
+      const end = new Date(pDate.getTime() + playbook.daysToMaturityMax * 86400_000).toISOString().slice(0, 10);
+      const daysIn = Math.max(0, Math.round((Date.now() - pDate.getTime()) / 86400_000));
+      const stage =
+        daysIn < 20
+          ? 'Early seedling & root establishment'
+          : daysIn < 48
+            ? 'Vegetative growth & flowering'
+            : daysIn < playbook.daysToMaturityMin
+              ? 'Fruit / grain fill stage'
+              : 'Harvest window open now';
+      harvestForecast = `Planted ${plantedDate} (${daysIn} days ago — ${stage}). Expected ${cropName} harvest window: ${start} to ${end}. ${playbook.harvestSigns}`;
+    }
+  }
+
+  let wateringAdvice = `Root-zone soil moisture is ${snap.currentRootMoisturePct}% with ~${rain.next7DaysMm} mm of rain forecast this week. `;
+  if (snap.currentRootMoisturePct < 24 && rain.next7DaysMm < 6) {
+    wateringAdvice += `Water ${cropName} tomorrow morning before heat rises; run drip every ${playbook?.waterFrequencyDaysDry ?? 3} days.`;
+  } else if (rain.next7DaysMm >= 15) {
+    wateringAdvice += `Skip irrigation for the next 4–5 days—incoming rain will recharge ${farmLabel}.`;
+  } else {
+    wateringAdvice += playbook?.waterGuide || `Water lightly in the early morning every ${playbook?.waterFrequencyDaysDry ?? 3}–4 days if top 5 cm feels dry.`;
+  }
+
+  const preservationTip = playbook?.preservationMethods?.[0]
+    ? `${playbook.preservationMethods[0].method}: ${playbook.preservationMethods[0].detail}`
+    : `Keep harvested ${cropName} dry, shaded, and ventilated right after picking.`;
+
+  const survivalRisks = farmData.survivalPredictor.risks.map((r) => `${r.label} (${r.level}): ${r.detail}`);
+  const actionTips = playbook?.careTips ?? farmData.quickTip.doNowSteps.map((s) => `${s.title}: ${s.detail}`);
+
+  return {
+    headline: `*happy beep-boop!* Here is the live field check for ${farmLabel}'s ${cropName}.`,
+    harvestForecast,
+    wateringAdvice,
+    preservationTip,
+    survivalRisks,
+    actionTips,
+    source: 'Agronomy Engine',
+    generatedAtIso: new Date().toISOString(),
+  };
+}
+
+export async function generateFarmAiAdvice(params: {
+  farmData: NasaFarmResponse;
+  activeField?: FarmFieldPlot;
+}): Promise<FarmAiAdvice> {
+  const { farmData, activeField } = params;
+  const fallback = buildDeterministicFarmAdvice(farmData, activeField);
+
+  if (!process.env.GEMINI_API_KEY) {
+    return fallback;
+  }
+
+  try {
+    const ai = getAiClient();
+    const notes = listFarmNotes();
+    const playbook = farmData.cropPlaybook;
+    const cropName = playbook?.cropName || farmData.survivalPredictor.cropName || farmData.anchorCrop;
+    const snap = farmData.quickTip.metricsSnapshot;
+    const rain = farmData.rainfallPredictor;
+    const planted = activeField?.plantedDate || 'Not entered yet';
+    const farmName = activeField ? `${activeField.name} (${activeField.areaHa} ha)` : farmData.location.name;
+
+    const { augmentedPrompt } = augmentPromptWithAgronomyKB(
+      `You are TARS, a cute, caring little monolith farm robot giving practical field advice in plain farmer language.`,
+      {
+        farmData,
+        activeField,
+        userQuery: `${cropName} harvest watering preservation survival risk ${farmData.location.name}`,
+      }
+    );
+
+    const prompt = `Analyze this farmer's real plot and return practical, data-backed advice in TARS's warm cute-robot voice:
+- Farm: ${farmName} in ${farmData.location.name} (${farmData.location.climateZone})
+- Planted crop: ${cropName}
+- Farmer's planting date: ${planted}
+- Maturity window: ${playbook ? `${playbook.daysToMaturityMin}-${playbook.daysToMaturityMax} days` : '75-90 days'}
+- Soil: ${farmData.soil.type}, pH ${farmData.soil.ph}, organic matter ${farmData.soil.organicMatterPct}%
+- Live NASA telemetry: root moisture ${snap.currentRootMoisturePct}%, 14d rain ${snap.recent14dRainMm}mm, skin temp ${snap.currentSkinTempC}°C, NDVI ${snap.currentNdvi.toFixed(2)}
+- 7-day / 14-day rain forecast: ${rain.next7DaysMm}mm / ${rain.next14DaysMm}mm (${rain.rainChancePct}% chance)
+- Survival check for ${cropName}: ${farmData.survivalPredictor.survivalPct}% survival (${farmData.survivalPredictor.risks.map((r) => `${r.label}: ${r.level} - ${r.detail}`).join('; ')})
+- Saved farmer notes: ${notes.length > 0 ? notes.map((n) => n.text).join('; ') : 'None'}
+
+Make harvestForecast calculate the actual growth stage and harvest dates if planting date is set; make wateringAdvice say exact timing based on moisture & forecast; make preservationTip explain how to preserve ${cropName} after harvest; list clear survivalRisks for ${cropName}; give 3 short actionTips.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: prompt,
+      config: {
+        systemInstruction: augmentedPrompt,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            headline: { type: Type.STRING },
+            harvestForecast: { type: Type.STRING },
+            wateringAdvice: { type: Type.STRING },
+            preservationTip: { type: Type.STRING },
+            survivalRisks: { type: Type.ARRAY, items: { type: Type.STRING } },
+            actionTips: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: [
+            'headline',
+            'harvestForecast',
+            'wateringAdvice',
+            'preservationTip',
+            'survivalRisks',
+            'actionTips',
+          ],
+        },
+      },
+    });
+
+    const parsed = JSON.parse((response.text ?? '{}').trim()) as Partial<FarmAiAdvice>;
+    if (parsed.headline && parsed.harvestForecast && parsed.wateringAdvice) {
+      return {
+        headline: parsed.headline,
+        harvestForecast: parsed.harvestForecast,
+        wateringAdvice: parsed.wateringAdvice,
+        preservationTip: parsed.preservationTip || fallback.preservationTip,
+        survivalRisks:
+          Array.isArray(parsed.survivalRisks) && parsed.survivalRisks.length > 0
+            ? parsed.survivalRisks
+            : fallback.survivalRisks,
+        actionTips:
+          Array.isArray(parsed.actionTips) && parsed.actionTips.length > 0
+            ? parsed.actionTips
+            : fallback.actionTips,
+        source: 'Gemini AI',
+        generatedAtIso: new Date().toISOString(),
+      };
+    }
+    return fallback;
+  } catch (err) {
+    console.warn('Gemini farm advice fallback:', err instanceof Error ? err.message : err);
+    return fallback;
+  }
 }

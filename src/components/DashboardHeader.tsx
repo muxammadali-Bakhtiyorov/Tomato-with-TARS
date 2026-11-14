@@ -1,4 +1,4 @@
-import { BarChart3, Bot, Globe, Moon, Repeat, Satellite, Sprout, Sun } from 'lucide-react';
+import { BarChart3, Bot, Globe, Moon, Satellite, Sprout, Sun } from 'lucide-react';
 import type { DashboardPage, ThemeMode } from '../types/farm';
 
 interface DashboardHeaderProps {
@@ -16,10 +16,9 @@ const TABS: {
   sublabel: string;
   Icon: typeof Sprout;
 }[] = [
-  { key: 'summary', label: '1. Summary', sublabel: 'Fields & daily tips', Icon: Sprout },
-  { key: 'rotations', label: '2. Location & Rotations', sublabel: 'Search & crop plan', Icon: Repeat },
-  { key: 'telemetry', label: '3. Analytics', sublabel: '4 NASA charts', Icon: BarChart3 },
-  { key: 'datasets', label: '4. NASA Data Sources', sublabel: 'Live feed proof', Icon: Satellite },
+  { key: 'summary', label: '1. Farm & Rotations', sublabel: 'Fields, location & crop plan', Icon: Sprout },
+  { key: 'telemetry', label: '2. Analytics', sublabel: '4 NASA charts & what-if', Icon: BarChart3 },
+  { key: 'datasets', label: '3. NASA Data Sources', sublabel: 'Live satellite feed proof', Icon: Satellite },
 ];
 
 export function DashboardHeader({
@@ -113,9 +112,9 @@ export function DashboardHeader({
           </div>
         </div>
 
-        {/* Dedicated Bigger & More Noticeable Page Selector */}
+        {/* Dedicated Bigger & More Noticeable 3-Page Selector */}
         <nav
-          className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1"
           aria-label="Dashboard pages"
         >
           {TABS.map((tab) => {

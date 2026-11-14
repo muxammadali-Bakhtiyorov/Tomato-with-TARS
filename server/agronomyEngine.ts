@@ -1,5 +1,6 @@
 import type {
   AnchorCrop,
+  CropPlaybook,
   CustomCropId,
   CustomRotationEvaluation,
   ForecastDay,
@@ -80,6 +81,186 @@ const ANCHOR_LABELS: Record<
     waterTag: 'Low–Medium',
     transplantMinNightC: 13,
     frostKillC: 3,
+  },
+};
+
+const CROP_PLAYBOOKS: Record<AnchorCrop, CropPlaybook> = {
+  tomatoes: {
+    cropKey: 'tomatoes',
+    cropName: 'Tomatoes',
+    emoji: '🍅',
+    daysToMaturityMin: 70,
+    daysToMaturityMax: 85,
+    idealTempRangeC: '18°C – 29°C',
+    idealPhRange: '6.0 – 6.8 (tolerates up to 7.5 with compost)',
+    waterFrequencyDaysDry: 3,
+    waterGuide:
+      'Water deeply at the base every 2–4 days during flowering and fruit fill; avoid wetting leaves to prevent early blight, and keep moisture steady to prevent blossom-end rot.',
+    harvestSigns:
+      'Pick when fruits reach full deep red (or breaker stage for transport) and yield slightly to gentle thumb pressure.',
+    preservationMethods: [
+      {
+        method: 'Cool Countertop / Pantry (12–15°C)',
+        detail: 'Store ripe tomatoes stem-side down out of sun for 5–8 days. Never refrigerate below 10°C—cold ruins flavor and texture.',
+      },
+      {
+        method: 'Sun-Drying & Salt Curing',
+        detail: 'Halve plum/Roma tomatoes, lightly salt, and dry in sunny airflow or dehydrator (55–60°C) for 6–10 months of shelf-stable storage.',
+      },
+      {
+        method: 'Water-Bath Canning / Tomato Paste',
+        detail: 'Simmer into passata or paste and acidify (lemon juice/citric acid to pH < 4.6) before sealing in sterilized jars for 12–18 months.',
+      },
+    ],
+    careTips: [
+      'Spread 5–7 cm of clean straw mulch around stems to block soil-splash blight.',
+      'Prune lower leaves touching dirt once plants reach 45 cm tall.',
+      'Above 34°C, pollen drops—use shade cloth during midday peaks.',
+    ],
+  },
+  peppers: {
+    cropKey: 'peppers',
+    cropName: 'Peppers',
+    emoji: '🫑',
+    daysToMaturityMin: 65,
+    daysToMaturityMax: 85,
+    idealTempRangeC: '20°C – 30°C',
+    idealPhRange: '6.0 – 7.0',
+    waterFrequencyDaysDry: 3,
+    waterGuide:
+      'Keep root zone evenly moist (every 3 days in dry heat); sudden dry-wet swings crack fruit skins and stress flowers.',
+    harvestSigns:
+      'Firm, glossy walls with full green, red, or yellow color—snip stems with shears instead of pulling branches.',
+    preservationMethods: [
+      {
+        method: 'Chilled Humid Crisper (7–10°C)',
+        detail: 'Keep dry and unwashed in breathable bags for up to 2–3 weeks without chilling injury.',
+      },
+      {
+        method: 'Ristra Air-Drying (Chilies)',
+        detail: 'String thin-walled chili peppers in dry, breezy shade until crisp; store whole or flake into airtight jars for 12+ months.',
+      },
+      {
+        method: 'Roasting, Freezing & Pickling',
+        detail: 'Char skins, peel, and freeze flat, or pickle in 5% vinegar brine for 8–12 months.',
+      },
+    ],
+    careTips: [
+      'Protect exposed fruit from harsh afternoon sunscald with healthy upper foliage.',
+      'Avoid over-feeding nitrogen mid-season or plants grow leaves instead of peppers.',
+    ],
+  },
+  potatoes: {
+    cropKey: 'potatoes',
+    cropName: 'Potatoes',
+    emoji: '🥔',
+    daysToMaturityMin: 85,
+    daysToMaturityMax: 110,
+    idealTempRangeC: '15°C – 24°C',
+    idealPhRange: '5.5 – 6.5',
+    waterFrequencyDaysDry: 4,
+    waterGuide:
+      'Steady water is critical during tuber set (flowering); cut back watering 10–14 days before harvest so skins toughen up.',
+    harvestSigns:
+      'Vines turn yellow and die back naturally, and tuber skins no longer rub off easily with your thumb.',
+    preservationMethods: [
+      {
+        method: '2-Week Dark Curing (12–15°C)',
+        detail: 'Leave harvested potatoes in dark, humid airflow for 10–14 days to heal small cuts before long storage.',
+      },
+      {
+        method: 'Root Cellar Storage (4–7°C, Dark)',
+        detail: 'Store cured tubers in breathable slatted crates or burlap sacks—never expose to light (prevents greening). Lasts 4–8 months.',
+      },
+    ],
+    careTips: [
+      'Hill soil 15–20 cm around stems so sunlight never reaches growing tubers.',
+      'Rotate away from tomatoes and peppers for 3 seasons to starve blight and scab.',
+    ],
+  },
+  wheat: {
+    cropKey: 'wheat',
+    cropName: 'Winter Wheat',
+    emoji: '🌾',
+    daysToMaturityMin: 110,
+    daysToMaturityMax: 135,
+    idealTempRangeC: '12°C – 25°C',
+    idealPhRange: '6.0 – 7.5',
+    waterFrequencyDaysDry: 10,
+    waterGuide:
+      'Mostly rain-fed; give supplemental irrigation at jointing and heading/grain-fill if root moisture drops below 22%.',
+    harvestSigns:
+      'Heads turn golden tan, straw is brittle, and kernels dent cleanly or resist fingernail pressure (13–14% grain moisture).',
+    preservationMethods: [
+      {
+        method: 'Dry Airtight Silo / Drums (<13% Moisture)',
+        detail: 'Dry threshed grain to under 13% moisture to prevent mold, then store in sealed food-grade bins or woven bags in a cool dry barn for 1–3+ years.',
+      },
+      {
+        method: 'Straw Baling for Mulch',
+        detail: 'Bale dry wheat straw to mulch next season’s tomatoes—cuts soil evaporation by up to 30%.',
+      },
+    ],
+    careTips: [
+      'Avoid waterlogging during grain ripening to protect protein quality.',
+      'Use leftover root stubble as a zero-till blanket before summer cover crops.',
+    ],
+  },
+  corn: {
+    cropKey: 'corn',
+    cropName: 'Sweet Corn',
+    emoji: '🌽',
+    daysToMaturityMin: 70,
+    daysToMaturityMax: 90,
+    idealTempRangeC: '18°C – 32°C',
+    idealPhRange: '6.0 – 7.0',
+    waterFrequencyDaysDry: 3,
+    waterGuide:
+      'Hungry for water during silking and tasseling! Never let roots dry out while tassels pollinate, or cobs will have missing kernels.',
+    harvestSigns:
+      'Silks turn dark brown and dry at the tips; pierce one kernel with a fingernail—a milky white juice means peak sweetness.',
+    preservationMethods: [
+      {
+        method: 'Rapid Hydro-Cooling (0–2°C)',
+        detail: 'Chill ears immediately after picking—warm corn converts sugar to starch within hours. Keeps fresh 4–7 days cold.',
+      },
+      {
+        method: 'Blanching & Freezing / Drying',
+        detail: 'Blanch cobs 4 minutes, cool in ice water, cut kernels, and freeze for 8–12 months—or dry dent corn on the stalk for flour/feed.',
+      },
+    ],
+    careTips: [
+      'Plant in tight 4+ row blocks rather than one long row so wind pollinates every ear evenly.',
+      'Follow corn with legumes or winter clover to replenish nitrogen.',
+    ],
+  },
+  melons: {
+    cropKey: 'melons',
+    cropName: 'Melons',
+    emoji: '🍉',
+    daysToMaturityMin: 75,
+    daysToMaturityMax: 95,
+    idealTempRangeC: '22°C – 35°C',
+    idealPhRange: '6.0 – 7.2',
+    waterFrequencyDaysDry: 4,
+    waterGuide:
+      'Water deeply at roots during vine run and fruit swelling; taper water gently the final 7–10 days before picking to concentrate sugar.',
+    harvestSigns:
+      'Tendril nearest the fruit turns dry and brown, and the belly spot resting on straw shifts from pale white to creamy butter yellow.',
+    preservationMethods: [
+      {
+        method: 'Cool Ventilated Rack (10–13°C)',
+        detail: 'Store whole uncut watermelons in shaded, dry crates on straw for 2–3 weeks without splitting.',
+      },
+      {
+        method: 'Dehydrated Strips & Pickled Rind',
+        detail: 'Slice sweet melon flesh thin and dehydrate into chewy fruit strips, or preserve rinds in spiced syrup.',
+      },
+    ],
+    careTips: [
+      'Rest developing fruit on clean straw or dry boards so wet soil never rots the underside.',
+      'Protect bees during morning bloom—avoid spraying while flowers are open.',
+    ],
   },
 };
 
@@ -310,74 +491,76 @@ function buildSurvivalPredictor(params: {
   if (upcomingMinC <= anchor.frostKillC) {
     score -= 48;
     frostLevel = 'High';
-    frostDetail = `Nights drop to ${upcomingMinC}°C! ${anchor.shortName} left uncovered outdoors will freeze and die out — wait for spring or cover them.`;
+    frostDetail = `Nights drop to ${upcomingMinC}°C! ${anchor.shortName} left uncovered outdoors will freeze and die out — wait for spring or use row covers.`;
   } else if (upcomingMinC < anchor.transplantMinNightC) {
     score -= 18;
     frostLevel = 'Medium';
-    frostDetail = `Nights are chilly (${upcomingMinC}°C). Growth will slow down unless protected with row covers or mulch.`;
+    frostDetail = `Nights are chilly (${upcomingMinC}°C) for ${anchor.shortName}. Growth will slow unless protected with row covers or straw mulch.`;
   }
 
   // 2. Soil Water / Drought check
   let droughtLevel: 'Low' | 'Medium' | 'High' = 'Low';
-  let droughtDetail = `Soil holds plenty of water (${currentRootMoisturePct}%) for healthy roots.`;
+  let droughtDetail = `Soil holds plenty of moisture (${currentRootMoisturePct}%) for ${anchor.shortName} roots.`;
   if (currentRootMoisturePct < 19 && rainfallPredictor.next7DaysMm < 5) {
     score -= 26;
     droughtLevel = 'High';
-    droughtDetail = `Soil is very dry (${currentRootMoisturePct}%) with little rain coming. Without watering, plants can wilt and die.`;
+    droughtDetail = `Soil is very dry (${currentRootMoisturePct}%) with little rain coming. Unwatered ${anchor.shortName.toLowerCase()} can wilt and drop blossoms.`;
   } else if (currentRootMoisturePct < 27 && rainfallPredictor.next7DaysMm < 8) {
     score -= 11;
     droughtLevel = 'Medium';
-    droughtDetail = `Soil moisture is getting low (${currentRootMoisturePct}%). Add straw mulch and run light morning drip.`;
+    droughtDetail = `Soil moisture is getting low (${currentRootMoisturePct}%) for ${anchor.shortName}. Add straw mulch and run light morning drip.`;
   }
 
   // 3. Heat stress check
   let heatLevel: 'Low' | 'Medium' | 'High' = 'Low';
-  let heatDetail = `Daytime heat (${upcomingMaxC}°C) is comfortable for your crop.`;
+  let heatDetail = `Daytime heat (${upcomingMaxC}°C) is comfortable for ${anchor.shortName}.`;
   if (upcomingMaxC >= 37) {
     score -= 20;
     heatLevel = 'High';
-    heatDetail = `Extreme heat (${upcomingMaxC}°C) can drop flowers and scorch leaves. Use shade cloth and mulch.`;
+    heatDetail = `Extreme heat (${upcomingMaxC}°C) can scorch ${anchor.shortName.toLowerCase()} leaves and cause flower drop. Use shade cloth and thick mulch.`;
   } else if (upcomingMaxC >= 33) {
     score -= 8;
     heatLevel = 'Medium';
-    heatDetail = `Warm weather (${upcomingMaxC}°C). Water early in the morning so it doesn't evaporate.`;
+    heatDetail = `Warm weather (${upcomingMaxC}°C) for ${anchor.shortName}. Water early in the morning so moisture doesn't evaporate.`;
   }
 
   // 4. Rotation / Disease check
-  const diseaseLevel: 'Low' | 'Medium' | 'High' = goal === 'pest' ? 'Low' : 'Low';
+  const diseaseLevel: 'Low' | 'Medium' | 'High' = 'Low';
   const diseaseDetail =
     goal === 'pest'
-      ? 'Your 4-season rotation breaks soil fungus and root pest cycles.'
-      : 'Rotating out of the same plant family keeps soil diseases low.';
+      ? `Rotating ${anchor.shortName.toLowerCase()} with mustard, grain, and legumes starves soil wilt and root pests.`
+      : `Following ${anchor.shortName.toLowerCase()} with non-related crops keeps soil-borne blight and rot low.`;
 
   const survivalPct = Math.max(12, Math.min(97, score));
   const dieOutRiskPct = 100 - survivalPct;
 
-  let verdictLabel = 'Likely to Thrive';
+  let verdictLabel = `${anchor.shortName} Likely to Thrive`;
   let verdictTone: SurvivalPredictor['verdictTone'] = 'safe';
-  let willSurviveSummary = `Roughly ${survivalPct}% chance your ${anchor.shortName.toLowerCase()} stay healthy right now with normal care.`;
+  let willSurviveSummary = `Roughly ${survivalPct}% chance your ${anchor.shortName.toLowerCase()} survive and stay healthy right now with normal care.`;
 
   if (survivalPct < 55) {
-    verdictLabel = 'High Die-Out Risk';
+    verdictLabel = `${anchor.shortName}: High Die-Out Risk`;
     verdictTone = 'danger';
-    willSurviveSummary = `High risk of dying out right now (${dieOutRiskPct}% risk, only ${survivalPct}% survival outdoors) — ${frostLevel === 'High' ? `nights are too cold (${upcomingMinC}°C).` : 'severe heat/drought stress.'}`;
+    willSurviveSummary = `High risk of your ${anchor.shortName.toLowerCase()} dying out outdoors right now (${dieOutRiskPct}% die-out risk, only ${survivalPct}% survival) — ${frostLevel === 'High' ? `nights are too cold (${upcomingMinC}°C).` : 'severe heat/drought stress.'}`;
   } else if (survivalPct < 80) {
-    verdictLabel = 'Needs Extra Care';
+    verdictLabel = `${anchor.shortName}: Needs Extra Care`;
     verdictTone = 'caution';
-    willSurviveSummary = `Moderate chance of stress (${survivalPct}% survival, ${dieOutRiskPct}% risk) — follow the watering & cover tips below so plants don't struggle.`;
+    willSurviveSummary = `Moderate stress risk for ${anchor.shortName.toLowerCase()} (${survivalPct}% survival, ${dieOutRiskPct}% die-out risk) — follow the watering & cover steps below.`;
   }
 
   return {
+    cropKey: anchorCrop,
+    cropName: anchor.shortName,
     survivalPct,
     dieOutRiskPct,
     verdictLabel,
     verdictTone,
     willSurviveSummary,
     risks: [
-      { label: 'Soil Water', level: droughtLevel, detail: droughtDetail },
-      { label: 'Cold / Frost', level: frostLevel, detail: frostDetail },
-      { label: 'Heat Stress', level: heatLevel, detail: heatDetail },
-      { label: 'Soil Disease', level: diseaseLevel, detail: diseaseDetail },
+      { label: `Soil Water (${anchor.shortName})`, level: droughtLevel, detail: droughtDetail },
+      { label: `Cold / Frost (${anchor.shortName})`, level: frostLevel, detail: frostDetail },
+      { label: `Heat Stress (${anchor.shortName})`, level: heatLevel, detail: heatDetail },
+      { label: `Soil Disease (${anchor.shortName})`, level: diseaseLevel, detail: diseaseDetail },
     ],
   };
 }
@@ -560,7 +743,11 @@ export function buildAgronomicPlan(params: {
   forecastDaily: ForecastDay[];
   goal: RotationGoal;
   anchorCrop: AnchorCrop;
+  farmName?: string;
+  areaHa?: number;
+  plantedDate?: string;
 }): {
+  cropPlaybook: CropPlaybook;
   rainfallPredictor: RainfallPredictor;
   survivalPredictor: SurvivalPredictor;
   quickTip: QuickActionTip;
@@ -568,8 +755,20 @@ export function buildAgronomicPlan(params: {
   trajectory: { labels: string[]; adaptiveRotation: number[]; monoculture: number[] };
   radar: { labels: string[]; tarsPlan: number[]; regionalAvg: number[] };
 } {
-  const { location, soil, telemetry, recentDaily, forecastDaily, goal, anchorCrop } = params;
+  const {
+    location,
+    soil,
+    telemetry,
+    recentDaily,
+    forecastDaily,
+    goal,
+    anchorCrop,
+    farmName,
+    areaHa,
+    plantedDate,
+  } = params;
   const anchor = ANCHOR_LABELS[anchorCrop] || ANCHOR_LABELS.tomatoes;
+  const cropPlaybook = CROP_PLAYBOOKS[anchorCrop] || CROP_PLAYBOOKS.tomatoes;
 
   const curMonthIdx = new Date().getUTCMonth();
   const annualRainMm = telemetry.rainfall.reduce((a, b) => a + b, 0);
@@ -789,25 +988,37 @@ export function buildAgronomicPlan(params: {
 
   const plantingOrderSummary = seasons.map((s) => `${s.order}. ${s.crop}`).join(' → ');
 
-  // Friendly, plain-English farmer tip
-  let verdictBadge = 'Soil Moisture Good';
-  let verdictTone: QuickActionTip['verdictTone'] = 'optimal';
-  let headline = `Hold off on watering — soil moisture looks good (${currentRootMoisturePct}%)`;
-  let waterStepDetail = `Rain gave your plot ${recent14dRainMm} mm recently and ${rainfallPredictor.next7DaysMm} mm is forecast this week. Skip watering for a few days.`;
-
-  if (currentRootMoisturePct < 24 && rainfallPredictor.next7DaysMm < 6) {
-    verdictBadge = 'Water Soon';
-    verdictTone = 'action';
-    headline = `Soil is getting dry (${currentRootMoisturePct}%) — water gently tomorrow morning`;
-    waterStepDetail = `Only ${recent14dRainMm} mm of rain fell in the last 2 weeks and little rain is forecast. Run drip lines early in the morning so water reaches the roots.`;
-  } else if (currentRootMoisturePct < 30 || currentSkinTempC >= 30) {
-    verdictBadge = 'Save Moisture';
-    verdictTone = 'watch';
-    headline = `Cover your soil with straw — ground is warming up (${currentSkinTempC}°C)`;
-    waterStepDetail = `Water evaporates quickly right now. Only water lightly if the top 5 cm of dirt feels dry to the touch.`;
+  // Friendly, plain-English farmer tip tailored to the active farm and crop
+  const farmLabel = farmName ? `${farmName}${areaHa ? ` (${areaHa} ha)` : ''}` : location.name;
+  let harvestNote = '';
+  if (plantedDate) {
+    const pDate = new Date(`${plantedDate}T00:00:00Z`);
+    if (!Number.isNaN(pDate.getTime())) {
+      const harvestStart = new Date(pDate.getTime() + cropPlaybook.daysToMaturityMin * 86400_000);
+      const harvestEnd = new Date(pDate.getTime() + cropPlaybook.daysToMaturityMax * 86400_000);
+      const daysElapsed = Math.max(0, Math.round((Date.now() - pDate.getTime()) / 86400_000));
+      harvestNote = ` Since you planted on ${plantedDate} (${daysElapsed} days in), ${anchor.shortName} typically ripen between ${harvestStart.toISOString().slice(0, 10)} and ${harvestEnd.toISOString().slice(0, 10)}.`;
+    }
   }
 
-  const summary = `For ${location.name}, the best simple plan is to plant ${seasons[0].crop} in ${MONTH_FULL[bestPlantIdx]}, then follow with ${seasons[1].crop}, ${seasons[2].crop}, and ${seasons[3].crop}. Rotating in this order protects your soil and saves roughly ${baseSavings}% on watering.`;
+  let verdictBadge = `${anchor.shortName}: Soil Moisture Good`;
+  let verdictTone: QuickActionTip['verdictTone'] = 'optimal';
+  let headline = `${farmLabel} — ${anchor.shortName} root moisture looks steady (${currentRootMoisturePct}%)`;
+  let waterStepDetail = `Rain gave ${farmLabel} ${recent14dRainMm} mm recently and ${rainfallPredictor.next7DaysMm} mm is forecast this week. Hold off watering your ${anchor.shortName.toLowerCase()} for ${Math.max(2, cropPlaybook.waterFrequencyDaysDry)} days.`;
+
+  if (currentRootMoisturePct < 24 && rainfallPredictor.next7DaysMm < 6) {
+    verdictBadge = `Water ${anchor.shortName} Soon`;
+    verdictTone = 'action';
+    headline = `${farmLabel} is getting dry (${currentRootMoisturePct}%) — water ${anchor.shortName.toLowerCase()} tomorrow morning`;
+    waterStepDetail = `Only ${recent14dRainMm} mm of rain fell in the last 2 weeks and little rain is forecast. ${cropPlaybook.waterGuide}`;
+  } else if (currentRootMoisturePct < 30 || currentSkinTempC >= 30) {
+    verdictBadge = `Protect ${anchor.shortName} Moisture`;
+    verdictTone = 'watch';
+    headline = `Mulch ${farmLabel} (${anchor.shortName}) — soil surface is warming (${currentSkinTempC}°C)`;
+    waterStepDetail = `Moisture evaporates fast right now. Water your ${anchor.shortName.toLowerCase()} gently every ${cropPlaybook.waterFrequencyDaysDry} days only if the top 5 cm feels dry.`;
+  }
+
+  const summary = `Tailored for ${farmLabel} in ${location.name}: plant ${seasons[0].crop} in ${MONTH_FULL[bestPlantIdx]}, then follow with ${seasons[1].crop}, ${seasons[2].crop}, and ${seasons[3].crop} to protect soil and save roughly ${baseSavings}% on irrigation.${harvestNote}`;
 
   const doNowSteps: QuickActionTip['doNowSteps'] = [
     {
@@ -865,6 +1076,7 @@ export function buildAgronomicPlan(params: {
   };
 
   return {
+    cropPlaybook,
     rainfallPredictor,
     survivalPredictor,
     quickTip: {

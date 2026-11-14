@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { LineChart, Sprout, Sun } from 'lucide-react';
+import { Sprout } from 'lucide-react';
 import type { DashboardPage } from '../types/farm';
 
 interface OrbitalLandingProps {
@@ -93,32 +93,11 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
           </div>
         </div>
 
-        <nav className="hidden lg:flex items-center gap-8 text-xs font-medium text-slate-300">
-          <button onClick={() => onEnterDashboard('summary', 'moon')} className="hover:text-emerald-400 transition cursor-pointer whitespace-nowrap">
-            Field Summary
-          </button>
-          <button onClick={() => onEnterDashboard('rotations', 'moon')} className="hover:text-emerald-400 transition cursor-pointer whitespace-nowrap">
-            Rotation Planner
-          </button>
-          <button onClick={() => onEnterDashboard('telemetry', 'moon')} className="hover:text-emerald-400 transition cursor-pointer whitespace-nowrap">
-            Analytics
-          </button>
-          <button onClick={() => onEnterDashboard('datasets', 'moon')} className="hover:text-emerald-400 transition cursor-pointer whitespace-nowrap">
-            NASA Data
-          </button>
-        </nav>
-
-        <div className="flex items-center gap-4 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>NASA Open Feeds Live</span>
           </div>
-          <button
-            onClick={() => onEnterDashboard('summary', 'moon')}
-            className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl transition shadow-lg shadow-emerald-500/20 cursor-pointer whitespace-nowrap"
-          >
-            Enter Farm Almanac
-          </button>
         </div>
       </header>
 
@@ -144,25 +123,11 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <button
-              onClick={() => onEnterDashboard('telemetry', 'moon')}
-              className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-sm px-6 py-3.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-emerald-500/25 cursor-pointer"
+              onClick={() => onEnterDashboard('summary', 'moon')}
+              className="bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-sm px-7 py-4 rounded-xl transition flex items-center gap-2.5 shadow-lg shadow-emerald-500/25 cursor-pointer"
             >
-              <LineChart className="w-4 h-4" />
-              <span>Open Analytics</span>
-            </button>
-            <button
-              onClick={() => onEnterDashboard('rotations', 'moon')}
-              className="bg-orbital-card/90 hover:bg-slate-800/90 text-slate-200 border border-orbital-border font-semibold text-sm px-6 py-3.5 rounded-xl transition flex items-center gap-2.5 backdrop-blur-md cursor-pointer"
-            >
-              <Sprout className="w-4 h-4 text-emerald-400" />
-              <span>Plan Crop Rotations</span>
-            </button>
-            <button
-              onClick={handleMoonClick}
-              className="bg-amber-400/10 hover:bg-amber-400/20 text-amber-200 border border-amber-400/40 font-semibold text-sm px-6 py-3.5 rounded-xl transition flex items-center gap-2.5 cursor-pointer"
-            >
-              <Sun className="w-4 h-4 text-amber-300" />
-              <span>Switch to Sun Mode</span>
+              <Sprout className="w-4 h-4" />
+              <span>Open Farm Almanac</span>
             </button>
           </div>
 
