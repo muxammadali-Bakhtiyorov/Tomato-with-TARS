@@ -1,0 +1,230 @@
+@import "tailwindcss";
+
+@theme {
+  --color-orbital-bg: #070d10;
+  --color-orbital-surface: #0c161a;
+  --color-orbital-card: #101e23;
+  --color-orbital-border: #1d353b;
+  --color-orbital-emerald: #10b981;
+  --color-orbital-mint: #34d399;
+
+  --color-almanac-bg: rgb(var(--al-bg));
+  --color-almanac-card: rgb(var(--al-card));
+  --color-almanac-pill: rgb(var(--al-pill));
+  --color-almanac-border: rgb(var(--al-border));
+  --color-almanac-borderDark: rgb(var(--al-borderDark));
+  --color-almanac-ink: rgb(var(--al-ink));
+  --color-almanac-muted: rgb(var(--al-muted));
+  --color-almanac-forest: rgb(var(--al-forest));
+  --color-almanac-forestHover: rgb(var(--al-forestHover));
+  --color-almanac-amber: rgb(var(--al-amber));
+  --color-almanac-terracotta: rgb(var(--al-terracotta));
+  --color-almanac-soft: rgb(var(--al-soft));
+
+  --font-sans: "Plus Jakarta Sans", sans-serif;
+  --font-serif: Fraunces, Georgia, serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* ===================================================================
+   THEME VARIABLES (Sun = bright almanac, Moon = orbital night)
+=================================================================== */
+:root {
+  --al-bg: 247 242 231;
+  --al-card: 251 248 241;
+  --al-pill: 239 232 216;
+  --al-border: 229 220 200;
+  --al-borderDark: 213 200 173;
+  --al-ink: 43 36 28;
+  --al-muted: 107 94 79;
+  --al-forest: 59 99 70;
+  --al-forestHover: 47 80 56;
+  --al-amber: 212 137 42;
+  --al-terracotta: 196 93 62;
+  --al-soft: 255 255 255;
+}
+
+.moon-mode {
+  --al-bg: 7 13 16;
+  --al-card: 16 30 35;
+  --al-pill: 24 44 51;
+  --al-border: 29 53 59;
+  --al-borderDark: 46 82 90;
+  --al-ink: 226 232 240;
+  --al-muted: 148 163 184;
+  --al-forest: 52 211 153;
+  --al-forestHover: 110 231 183;
+  --al-amber: 251 191 36;
+  --al-terracotta: 251 146 112;
+  --al-soft: 12 22 26;
+}
+
+html,
+body {
+  scroll-behavior: auto;
+}
+
+body {
+  background-color: #070d10;
+  color: #e2e8f0;
+  transition: background-color 0.6s ease, color 0.6s ease;
+}
+
+body.sun-mode {
+  background-color: #f7f2e7;
+  background-image: radial-gradient(rgba(180, 155, 115, 0.14) 1px, transparent 0);
+  background-size: 24px 24px;
+  color: #2b241c;
+}
+
+#space-bg {
+  transition: opacity 0.7s ease;
+  opacity: 1;
+}
+
+#sun-glow {
+  transition: opacity 0.7s ease;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 88% -8%, rgba(254, 240, 138, 0.7) 0%, rgba(253, 224, 71, 0.22) 24%, transparent 52%),
+    radial-gradient(circle at 8% 108%, rgba(212, 137, 42, 0.12) 0%, transparent 45%);
+}
+
+.sun-mode #space-bg {
+  opacity: 0;
+}
+
+.sun-mode #sun-glow {
+  opacity: 1;
+}
+
+/* Moon-mode adaptive tones inside dashboard */
+.moon-mode #sun-dashboard .surface-soft {
+  background-color: rgb(var(--al-soft));
+}
+.moon-mode #sun-dashboard .badge-emerald {
+  background-color: rgba(52, 211, 153, 0.15);
+}
+.moon-mode #sun-dashboard .badge-amber {
+  background-color: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+}
+.moon-mode #sun-dashboard .badge-orange {
+  background-color: rgba(251, 146, 112, 0.15);
+}
+.moon-mode #sun-dashboard .badge-sky {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #7dd3fc;
+}
+.moon-mode #sun-dashboard .badge-indigo {
+  background-color: rgba(129, 140, 248, 0.18);
+  color: #a5b4fc;
+}
+.moon-mode #sun-dashboard .btn-forest,
+.moon-mode #telemetry-loading-modal .btn-forest {
+  color: #04130d;
+}
+.moon-mode input::placeholder {
+  color: rgb(var(--al-muted) / 0.7);
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgb(var(--al-forest));
+  outline-offset: 2px;
+}
+
+/* ===================================================================
+   SPACE ORBITAL & MOON -> SUN ANIMATIONS
+=================================================================== */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+
+@keyframes floatSatOne {
+  0%, 100% { transform: translate(0px, 0px) rotate(-12deg); }
+  50% { transform: translate(12px, -10px) rotate(-8deg); }
+}
+
+@keyframes floatSatTwo {
+  0%, 100% { transform: translate(0px, 0px) rotate(14deg); }
+  50% { transform: translate(-10px, 12px) rotate(18deg); }
+}
+
+@keyframes spinOrbitSlow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spinOrbitReverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+
+@keyframes moonHoverPulse {
+  0%, 100% { box-shadow: 0 0 28px rgba(226, 232, 240, 0.45), 0 0 60px rgba(56, 189, 248, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(254, 240, 138, 0.65), 0 0 80px rgba(251, 191, 36, 0.3); }
+}
+
+@keyframes sunCoronaSpin {
+  from { transform: rotate(0deg) scale(1); }
+  to { transform: rotate(360deg) scale(1.06); }
+}
+
+.star-dot {
+  position: absolute;
+  background: #ffffff;
+  border-radius: 50%;
+  animation: twinkle 3.6s infinite ease-in-out;
+}
+.sat-float-1 { animation: floatSatOne 6.5s ease-in-out infinite; }
+.sat-float-2 { animation: floatSatTwo 7.5s ease-in-out infinite; }
+.orbit-ring-cw { animation: spinOrbitSlow 70s linear infinite; }
+.orbit-ring-ccw { animation: spinOrbitReverse 95s linear infinite; }
+.moon-idle-glow { animation: moonHoverPulse 3.2s infinite ease-in-out; }
+.sun-rays-spin { animation: sunCoronaSpin 18s linear infinite; }
+
+/* ===================================================================
+   STORYBOOK HEN
+=================================================================== */
+@keyframes tarsSlabLeft {
+  0%, 100% { transform: translateY(0px) rotate(-3.5deg); }
+  50% { transform: translateY(-3.5px) rotate(4deg); }
+}
+@keyframes tarsSlabRight {
+  0%, 100% { transform: translateY(-3.5px) rotate(4deg); }
+  50% { transform: translateY(0px) rotate(-3.5deg); }
+}
+@keyframes tarsChassisBob {
+  0%, 100% { transform: translateY(0px); }
+  25% { transform: translateY(-1.8px); }
+  50% { transform: translateY(0px); }
+  75% { transform: translateY(-1.8px); }
+}
+
+.tars-walking .tars-leg-left {
+  transform-origin: 30px 36px;
+  animation: tarsSlabLeft 0.72s infinite ease-in-out;
+}
+.tars-walking .tars-leg-right {
+  transform-origin: 70px 36px;
+  animation: tarsSlabRight 0.72s infinite ease-in-out;
+}
+.tars-walking .tars-chassis {
+  animation: tarsChassisBob 0.72s infinite ease-in-out;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgb(var(--al-bg)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--al-borderDark)); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--al-forest)); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}
