@@ -3,6 +3,7 @@ import { Satellite } from 'lucide-react';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { DashboardHeader } from './components/DashboardHeader';
 import { DatasetsPage } from './components/DatasetsPage';
+import { FarmPage } from './components/FarmPage';
 import { OrbitalLanding } from './components/OrbitalLanding';
 import { SummaryPage } from './components/SummaryPage';
 import { TarsRobotChat } from './components/TarsRobotChat';
@@ -10,6 +11,7 @@ import { readStorage, STORAGE_KEYS, writeStorage } from './lib/persistence';
 import type {
   AnchorCrop,
   DashboardPage,
+  FarmAiAdvice,
   FarmFieldPlot,
   NasaFarmResponse,
   RotationGoal,
@@ -229,6 +231,26 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState(0);
   const [scanMessage, setScanMessage] = useState('Locking onto NASA POWER & SMAP moisture...');
   const [savingPlan, setSavingPlan] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState<FarmAiAdvice | null>(null);
+  const [loadingAiAdvice, setLoadingAiAdvice] = useState(false);
+
+  useEffect(() => {
+    setLoadingAiAdvice(true);
+    fetch('/api/farm/ai-advice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        farmData: data,
+        activeField: fields.find((f) => f.id === activeFieldId),
+      }),
+    })
+      .then((r) => r.json())
+      .then((j: FarmAiAdvice) => {
+        if (j && j.headline) setAiAdvice(j);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingAiAdvice(false));
+  }, [data, activeFieldId, fields]);
 
   const [bloomStyle, setBloomStyle] = useState<{ opacity: number; background: string }>({
     opacity: 0,
@@ -742,6 +764,38 @@ export default function App() {
           />
 
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-36">
+            {activePage === 'farm' && (
+              <FarmPage
+                theme={theme}
+                data={data}
+                fields={fields}
+                activeFieldId={activeFieldId}
+                savedPlans={savedPlans}
+                scanning={scanning}
+                savingPlan={savingPlan}
+                aiAdvice={aiAdvice}
+                loadingAiAdvice={loadingAiAdvice}
+                onSelectField={handleSelectField}
+                onCreateField={handleCreateField}
+                onUpdateField={handleUpdateField}
+                onDeleteField={handleDeleteField}
+                onScanLocation={(query) => {
+                  const af = fields.find((f) => f.id === activeFieldId);
+                  return fetchTelemetry({
+                    q: query,
+                    farmName: af?.name,
+                    areaHa: af?.areaHa,
+                    plantedDate: af?.plantedDate,
+                    showModal: true,
+                  });
+                }}
+                onSaveCurrentPlan={handleSaveCurrentPlan}
+                onDeletePlan={handleDeletePlan}
+                onLoadSavedPlan={handleLoadSavedPlan}
+                onExportJson={handleExportJson}
+              />
+            )}
+
             {activePage === 'summary' && (
               <SummaryPage
                 theme={theme}
@@ -800,23 +854,24 @@ export default function App() {
               />
             )}
 
-            {activePage === 'telemetry' && (
-              <AnalyticsPage
-                theme={theme}
-                data={data}
-                scanning={scanning}
-                onRefresh={() =>
-                  fetchTelemetry({
-                    q: data.location.name,
-                    lat: data.location.lat,
-                    lon: data.location.lon,
-                    showModal: true,
-                  })
-                }
-              />
+            {activePage === 'analytics' && (
+              <div className="space-y-12">
+                <AnalyticsPage
+                  theme={theme}
+                  data={data}
+                  scanning={scanning}
+                  onRefresh={() =>
+                    fetchTelemetry({
+                      q: data.location.name,
+                      lat: data.location.lat,
+                      lon: data.location.lon,
+                      showModal: true,
+                    })
+                  }
+                />
+                <DatasetsPage data={data} />
+              </div>
             )}
-
-            {activePage === 'datasets' && <DatasetsPage data={data} />}
           </main>
         </div>
       )}

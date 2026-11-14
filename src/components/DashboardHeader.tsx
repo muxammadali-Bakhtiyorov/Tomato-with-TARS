@@ -1,4 +1,4 @@
-import { BarChart3, Bot, Globe, Moon, Satellite, Sprout, Sun } from 'lucide-react';
+import { BarChart3, Bot, Globe, Moon, Satellite, Sparkles, Sprout, Sun } from 'lucide-react';
 import type { DashboardPage, ThemeMode } from '../types/farm';
 
 interface DashboardHeaderProps {
@@ -16,9 +16,9 @@ const TABS: {
   sublabel: string;
   Icon: typeof Sprout;
 }[] = [
-  { key: 'summary', label: '1. Farm & Rotations', sublabel: 'Fields, location & crop plan', Icon: Sprout },
-  { key: 'telemetry', label: '2. Analytics', sublabel: '4 NASA charts & what-if', Icon: BarChart3 },
-  { key: 'datasets', label: '3. NASA Data Sources', sublabel: 'Live satellite feed proof', Icon: Satellite },
+  { key: 'farm', label: '1. My Farm', sublabel: 'Plots, planted dates & AI advice', Icon: Sprout },
+  { key: 'summary', label: '2. Rotation Planner', sublabel: '4-season rotation & economics', Icon: Sparkles },
+  { key: 'analytics', label: '3. Analytics & NASA Data', sublabel: 'Satellite charts & live feeds', Icon: BarChart3 },
 ];
 
 export function DashboardHeader({

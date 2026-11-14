@@ -243,7 +243,7 @@ ${liveSources || 'NASA POWER Agroclimatology'}`;
     }
 
     const plotSummary = activeField
-      ? `The farmer has selected their saved farm "${activeField.name}" (${activeField.areaHa} hectares, focusing on ${activeField.anchorCrop} with a goal of "${activeField.goal}").`
+      ? `The farmer has selected their saved farm "${activeField.name}" (${activeField.areaHa} hectares, focusing on ${activeField.anchorCrop} with a goal of "${activeField.goal}"${activeField.plantedDate ? `, planted on date ${activeField.plantedDate}` : ', planting date not specified'}).`
       : 'The farmer has not saved a personal farm plot yet—they are currently exploring this region in the Virtual Sandbox.';
 
     basePrompt += `

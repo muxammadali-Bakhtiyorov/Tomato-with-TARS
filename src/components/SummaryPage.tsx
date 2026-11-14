@@ -26,6 +26,7 @@ import type {
   AnchorCrop,
   CustomCropId,
   CustomRotationEvaluation,
+  FarmAiAdvice,
   FarmFieldPlot,
   NasaFarmResponse,
   RotationGoal,
@@ -49,6 +50,7 @@ interface SummaryPageProps {
     locationQuery: string;
     anchorCrop: AnchorCrop;
     goal: RotationGoal;
+    plantedDate?: string;
   }) => Promise<void>;
   onUpdateField: (
     id: string,
@@ -58,6 +60,7 @@ interface SummaryPageProps {
       locationQuery: string;
       anchorCrop: AnchorCrop;
       goal: RotationGoal;
+      plantedDate?: string;
     }
   ) => Promise<void>;
   onDeleteField: (id: string) => Promise<void>;
@@ -177,9 +180,30 @@ export function SummaryPage({
   const [plotLocation, setPlotLocation] = useState(location.name);
   const [plotCrop, setPlotCrop] = useState<AnchorCrop>(data.anchorCrop);
   const [plotGoal, setPlotGoal] = useState<RotationGoal>(data.goal);
+  const [plotPlantedDate, setPlotPlantedDate] = useState('');
+  const [aiAdvice, setAiAdvice] = useState<FarmAiAdvice | null>(null);
+  const [loadingAiAdvice, setLoadingAiAdvice] = useState(false);
   const [savingPlot, setSavingPlot] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoadingAiAdvice(true);
+    fetch('/api/farm/ai-advice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        farmData: data,
+        activeField: fields.find((f) => f.id === activeFieldId),
+      }),
+    })
+      .then((r) => r.json())
+      .then((j: FarmAiAdvice) => {
+        if (j && j.headline) setAiAdvice(j);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingAiAdvice(false));
+  }, [data, activeFieldId, fields]);
 
   // Compact Location + Rotation state (persisted)
   const savedRotationInputs = readStorage<{
@@ -251,6 +275,7 @@ export function SummaryPage({
     setPlotLocation(location.name);
     setPlotCrop(data.anchorCrop);
     setPlotGoal(data.goal);
+    setPlotPlantedDate('');
     setShowPlotForm(true);
   };
 
@@ -262,6 +287,7 @@ export function SummaryPage({
     setPlotLocation(field.locationQuery);
     setPlotCrop(field.anchorCrop);
     setPlotGoal(field.goal);
+    setPlotPlantedDate(field.plantedDate || '');
     setShowPlotForm(true);
   };
 
@@ -282,6 +308,7 @@ export function SummaryPage({
         locationQuery: plotLocation.trim() || location.name,
         anchorCrop: plotCrop,
         goal: plotGoal,
+        plantedDate: plotPlantedDate.trim() || undefined,
       };
       if (editingFieldId) {
         await onUpdateField(editingFieldId, payload);
@@ -289,6 +316,7 @@ export function SummaryPage({
         await onCreateField(payload);
       }
       setPlotName('');
+      setPlotPlantedDate('');
       setEditingFieldId(null);
       setShowPlotForm(false);
     } finally {
@@ -563,7 +591,7 @@ export function SummaryPage({
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3 items-end">
             <div className="space-y-1">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-almanac-muted">
                 Farm / Plot Name
@@ -632,20 +660,31 @@ export function SummaryPage({
                 <option value="pest">Stop Pests</option>
               </select>
             </div>
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-almanac-muted">
+                Planted Date
+              </label>
+              <input
+                type="date"
+                value={plotPlantedDate}
+                onChange={(e) => setPlotPlantedDate(e.target.value)}
+                className="w-full bg-white surface-soft border border-almanac-borderDark rounded-xl px-3 py-2 text-xs text-almanac-ink tabular-nums"
+              />
+            </div>
             <div className="flex gap-2">
               <button
                 type="submit"
                 disabled={savingPlot}
-                className="flex-1 bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white font-bold text-xs py-2.5 px-4 rounded-xl transition cursor-pointer"
+                className="flex-1 bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white font-bold text-xs py-2.5 px-3 rounded-xl transition cursor-pointer"
               >
-                {savingPlot ? 'Saving...' : editingFieldId ? 'Save Changes' : 'Save Plot'}
+                {savingPlot ? '...' : editingFieldId ? 'Save' : 'Add'}
               </button>
               <button
                 type="button"
                 onClick={closePlotForm}
-                className="bg-almanac-pill text-almanac-ink font-semibold text-xs py-2.5 px-3 rounded-xl cursor-pointer"
+                className="bg-almanac-pill text-almanac-ink font-semibold text-xs py-2.5 px-2 rounded-xl cursor-pointer"
               >
-                Cancel
+                ✕
               </button>
             </div>
           </div>
@@ -806,6 +845,79 @@ export function SummaryPage({
         </div>
       </div>
 
+      {/* AI FARM ADVISOR CARD */}
+      <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="p-2 rounded-2xl bg-almanac-forest/15 text-almanac-forest">
+              <Sparkles className="w-5 h-5" />
+            </span>
+            <div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
+                TARS AI Farm Advisor &middot; Live Satellite Intelligence
+              </span>
+              <h3 className="font-serif font-bold text-xl text-almanac-ink">
+                Personalized Recommendations for Your Farm
+              </h3>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-emerald-100 badge-emerald text-almanac-forest text-xs font-bold font-mono">
+            {aiAdvice?.source || 'Agronomy Engine'}
+          </span>
+        </div>
+
+        {loadingAiAdvice && !aiAdvice ? (
+          <div className="text-xs font-mono text-almanac-muted py-4 animate-pulse">
+            TARS is consulting NASA weather, SoilGrids, and your farm schedule...
+          </div>
+        ) : aiAdvice ? (
+          <div className="space-y-4 text-xs">
+            <p className="text-sm font-serif font-bold text-almanac-ink bg-almanac-pill/60 border border-almanac-border rounded-2xl p-4">
+              {aiAdvice.headline}
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1.5">
+                <div className="font-bold text-almanac-ink flex items-center gap-1.5">
+                  <Sprout className="w-4 h-4 text-almanac-forest" />
+                  <span>Harvest Countdown &amp; Growth Stage</span>
+                </div>
+                <p className="text-almanac-muted leading-relaxed">{aiAdvice.harvestForecast}</p>
+              </div>
+
+              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1.5">
+                <div className="font-bold text-almanac-ink flex items-center gap-1.5">
+                  <Droplets className="w-4 h-4 text-sky-500" />
+                  <span>Precise Watering Schedule</span>
+                </div>
+                <p className="text-almanac-muted leading-relaxed">{aiAdvice.wateringAdvice}</p>
+              </div>
+            </div>
+
+            <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1.5">
+              <div className="font-bold text-almanac-ink flex items-center gap-1.5">
+                <Leaf className="w-4 h-4 text-almanac-amber" />
+                <span>Post-Harvest Preservation Tip</span>
+              </div>
+              <p className="text-almanac-muted leading-relaxed">{aiAdvice.preservationTip}</p>
+            </div>
+
+            {aiAdvice.actionTips.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="font-mono text-[11px] uppercase text-almanac-muted font-bold">Action Steps for This Week</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {aiAdvice.actionTips.map((tip) => (
+                    <div key={tip} className="bg-almanac-pill/50 border border-almanac-border rounded-xl p-3 text-almanac-ink leading-snug">
+                      {tip}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       {/* RECOMMENDED 4-SEASON PLANTING ORDER */}
       <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -862,6 +974,79 @@ export function SummaryPage({
           ))}
         </div>
       </div>
+
+      {/* CROP PLAYBOOK & PRESERVATION GUIDE */}
+      {data.cropPlaybook && (
+        <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
+                Active Crop Playbook &bull; {data.cropPlaybook.emoji} {data.cropPlaybook.cropName}
+              </span>
+              <h3 className="font-serif font-bold text-2xl text-almanac-ink mt-0.5">
+                How to Grow, Harvest &amp; Preserve Your {data.cropPlaybook.cropName}
+              </h3>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="px-3 py-1 rounded-full bg-almanac-pill border border-almanac-border text-almanac-ink">
+                Maturity: <strong>{data.cropPlaybook.daysToMaturityMin}–{data.cropPlaybook.daysToMaturityMax} days</strong>
+              </span>
+              <span className="px-3 py-1 rounded-full bg-emerald-100 badge-emerald text-almanac-forest font-bold">
+                Water every {data.cropPlaybook.waterFrequencyDaysDry} days dry
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-2">
+              <div className="text-xs font-bold text-almanac-ink flex items-center gap-1.5">
+                <Sprout className="w-4 h-4 text-almanac-forest" />
+                <span>Ideal Climate &amp; Soil</span>
+              </div>
+              <p className="text-xs text-almanac-muted leading-relaxed">
+                <strong>Temperature:</strong> {data.cropPlaybook.idealTempRangeC}<br />
+                <strong>Soil pH:</strong> {data.cropPlaybook.idealPhRange}
+              </p>
+              <p className="text-xs text-almanac-ink leading-relaxed font-medium pt-1">
+                {data.cropPlaybook.waterGuide}
+              </p>
+            </div>
+
+            <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-2">
+              <div className="text-xs font-bold text-almanac-ink flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Harvest Sign &amp; Cues</span>
+              </div>
+              <p className="text-xs text-almanac-muted leading-relaxed">
+                {data.cropPlaybook.harvestSigns}
+              </p>
+              <div className="space-y-1 pt-1">
+                {data.cropPlaybook.careTips.map((tip) => (
+                  <div key={tip} className="text-[11px] text-almanac-ink flex items-start gap-1.5">
+                    <span className="text-almanac-forest font-bold">✓</span>
+                    <span>{tip}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-2">
+              <div className="text-xs font-bold text-almanac-ink flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-almanac-amber" />
+                <span>Preservation Methods</span>
+              </div>
+              <div className="space-y-2.5">
+                {data.cropPlaybook.preservationMethods.map((pm) => (
+                  <div key={pm.method} className="space-y-0.5">
+                    <div className="text-xs font-bold text-almanac-ink">{pm.method}</div>
+                    <p className="text-[11px] text-almanac-muted leading-snug">{pm.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TEST YOUR OWN 4-SEASON VIRTUAL PLANTING PLAN */}
       <div
@@ -1015,6 +1200,99 @@ export function SummaryPage({
                 )}
               </div>
             </div>
+
+            {evaluation.economics && (
+              <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-almanac-border pb-3">
+                  <div>
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
+                      Economic &amp; Market Simulation &bull; {evaluation.economics.countryName}
+                    </span>
+                    <h4 className="font-serif font-bold text-lg text-almanac-ink">
+                      Estimated Investment, Revenue &amp; Net Profit
+                    </h4>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-mono">
+                    <span className="px-2.5 py-1 rounded-full bg-almanac-pill border border-almanac-border text-almanac-ink">
+                      Area: <strong>{evaluation.economics.areaHa} ha</strong>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 badge-emerald text-almanac-forest font-bold">
+                      ROI: {evaluation.economics.roiPct}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-almanac-pill/60 border border-almanac-border rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-mono text-almanac-muted">Total Investment</div>
+                    <div className="font-serif font-bold text-lg text-almanac-ink tabular-nums mt-0.5">
+                      ${evaluation.economics.totalInvestmentUsd.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] font-mono text-almanac-muted">
+                      ({evaluation.economics.currencySymbol}{evaluation.economics.totalInvestmentLocal.toLocaleString()})
+                    </div>
+                  </div>
+                  <div className="bg-almanac-pill/60 border border-almanac-border rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-mono text-almanac-muted">Total Revenue</div>
+                    <div className="font-serif font-bold text-lg text-almanac-forest tabular-nums mt-0.5">
+                      ${evaluation.economics.totalRevenueUsd.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] font-mono text-almanac-muted">
+                      ({evaluation.economics.currencySymbol}{evaluation.economics.totalRevenueLocal.toLocaleString()})
+                    </div>
+                  </div>
+                  <div className="bg-almanac-pill/60 border border-almanac-border rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-mono text-almanac-muted">Net Profit</div>
+                    <div className={`font-serif font-bold text-lg tabular-nums mt-0.5 ${evaluation.economics.netProfitUsd >= 0 ? 'text-almanac-forest' : 'text-almanac-terracotta'}`}>
+                      ${evaluation.economics.netProfitUsd.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] font-mono text-almanac-muted">
+                      ({evaluation.economics.currencySymbol}{evaluation.economics.netProfitLocal.toLocaleString()})
+                    </div>
+                  </div>
+                  <div className="bg-almanac-pill/60 border border-almanac-border rounded-xl p-3">
+                    <div className="text-[10px] uppercase font-mono text-almanac-muted">Return on Investment</div>
+                    <div className="font-serif font-bold text-lg text-amber-700 tabular-nums mt-0.5">
+                      {evaluation.economics.roiPct}% ROI
+                    </div>
+                    <div className="text-[10px] font-mono text-almanac-muted">Live FX + World Bank Index</div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto pt-1">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-almanac-border text-[10px] font-mono uppercase text-almanac-muted">
+                        <th className="py-2 pr-3">Season / Crop</th>
+                        <th className="py-2 pr-3">Yield (Tons)</th>
+                        <th className="py-2 pr-3">Farmgate Price</th>
+                        <th className="py-2 pr-3">Investment</th>
+                        <th className="py-2 pr-3">Revenue</th>
+                        <th className="py-2">Net Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-almanac-border/60 font-mono tabular-nums text-[11px]">
+                      {evaluation.economics.seasonBreakdown.map((s) => (
+                        <tr key={s.seasonLabel} className="hover:bg-almanac-pill/40">
+                          <td className="py-2 pr-3 font-semibold text-almanac-ink">
+                            {s.seasonLabel}: <span className="text-almanac-forest">{s.cropName}</span>
+                          </td>
+                          <td className="py-2 pr-3 text-almanac-ink">{s.expectedYieldTons} t</td>
+                          <td className="py-2 pr-3 text-almanac-muted">
+                            {evaluation.economics?.currencySymbol}{s.pricePerKgLocal} /kg (${s.pricePerKgUsd}/kg)
+                          </td>
+                          <td className="py-2 pr-3 text-almanac-terracotta">${s.investmentUsd.toLocaleString()}</td>
+                          <td className="py-2 pr-3 text-almanac-forest">${s.revenueUsd.toLocaleString()}</td>
+                          <td className={`py-2 font-bold ${s.profitUsd >= 0 ? 'text-almanac-forest' : 'text-almanac-terracotta'}`}>
+                            ${s.profitUsd.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1025,10 +1303,10 @@ export function SummaryPage({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-muted font-semibold">
-                Crop Survival Predictor
+                Crop Survival Predictor &bull; {survivalPredictor.cropName}
               </span>
               <h3 className="font-serif font-bold text-xl text-almanac-ink mt-0.5">
-                Will Your Plants Survive or Die Out?
+                Will Your {survivalPredictor.cropName} Survive or Die Out?
               </h3>
             </div>
             <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 ${survivalBadgeColor}`}>

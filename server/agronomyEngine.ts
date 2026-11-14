@@ -1001,24 +1001,24 @@ export function buildAgronomicPlan(params: {
     }
   }
 
-  let verdictBadge = `${anchor.shortName}: Soil Moisture Good`;
-  let verdictTone: QuickActionTip['verdictTone'] = 'optimal';
-  let headline = `${farmLabel} — ${anchor.shortName} root moisture looks steady (${currentRootMoisturePct}%)`;
-  let waterStepDetail = `Rain gave ${farmLabel} ${recent14dRainMm} mm recently and ${rainfallPredictor.next7DaysMm} mm is forecast this week. Hold off watering your ${anchor.shortName.toLowerCase()} for ${Math.max(2, cropPlaybook.waterFrequencyDaysDry)} days.`;
+  let verdictBadge = currentRootMoisturePct >= 28 ? 'Soil Moisture Optimal' : 'Soil Moisture Low';
+  let verdictTone: QuickActionTip['verdictTone'] = currentRootMoisturePct >= 28 ? 'optimal' : 'action';
+  let headline = `${farmLabel} — Root-zone moisture is ${currentRootMoisturePct}% (${recent14dRainMm} mm recent rain)`;
+  let waterStepDetail = `Rain gave ${farmLabel} ${recent14dRainMm} mm recently and ${rainfallPredictor.next7DaysMm} mm is forecast this week. Adjust irrigation based on soil root moisture.`;
 
   if (currentRootMoisturePct < 24 && rainfallPredictor.next7DaysMm < 6) {
-    verdictBadge = `Water ${anchor.shortName} Soon`;
+    verdictBadge = 'Watering Recommended Soon';
     verdictTone = 'action';
-    headline = `${farmLabel} is getting dry (${currentRootMoisturePct}%) — water ${anchor.shortName.toLowerCase()} tomorrow morning`;
-    waterStepDetail = `Only ${recent14dRainMm} mm of rain fell in the last 2 weeks and little rain is forecast. ${cropPlaybook.waterGuide}`;
+    headline = `${farmLabel} soil is getting dry (${currentRootMoisturePct}%) — gentle morning irrigation advised`;
+    waterStepDetail = `Only ${recent14dRainMm} mm of rain fell in the last 2 weeks with little rain forecast. Apply early morning drip or mulch.`;
   } else if (currentRootMoisturePct < 30 || currentSkinTempC >= 30) {
-    verdictBadge = `Protect ${anchor.shortName} Moisture`;
+    verdictBadge = 'Moisture & Mulch Watch';
     verdictTone = 'watch';
-    headline = `Mulch ${farmLabel} (${anchor.shortName}) — soil surface is warming (${currentSkinTempC}°C)`;
-    waterStepDetail = `Moisture evaporates fast right now. Water your ${anchor.shortName.toLowerCase()} gently every ${cropPlaybook.waterFrequencyDaysDry} days only if the top 5 cm feels dry.`;
+    headline = `${farmLabel} surface temperature is warming (${currentSkinTempC}°C) — mulch recommended`;
+    waterStepDetail = `Moisture evaporates quickly in warm weather. Spread straw mulch to lock soil moisture in.`;
   }
 
-  const summary = `Tailored for ${farmLabel} in ${location.name}: plant ${seasons[0].crop} in ${MONTH_FULL[bestPlantIdx]}, then follow with ${seasons[1].crop}, ${seasons[2].crop}, and ${seasons[3].crop} to protect soil and save roughly ${baseSavings}% on irrigation.${harvestNote}`;
+  const summary = `Satellite data analysis for ${farmLabel} in ${location.name}: root-zone soil moisture sits at ${currentRootMoisturePct}%, annual rainfall averages ${annualRainMm} mm, and ground temp is ${currentSkinTempC}°C. Recommended 4-season rotational planning preserves soil health and saves roughly ${baseSavings}% on irrigation.${harvestNote}`;
 
   const doNowSteps: QuickActionTip['doNowSteps'] = [
     {

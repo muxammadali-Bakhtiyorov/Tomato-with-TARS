@@ -1,5 +1,5 @@
 export type ThemeMode = 'moon' | 'sun';
-export type DashboardPage = 'summary' | 'telemetry' | 'datasets';
+export type DashboardPage = 'farm' | 'summary' | 'analytics';
 export type RotationGoal = 'water' | 'nitrogen' | 'pest';
 export type AnchorCrop = 'tomatoes' | 'peppers' | 'potatoes' | 'wheat' | 'corn' | 'melons';
 
