@@ -15,6 +15,23 @@ Open [http://localhost:3000](http://localhost:3000). Browser geolocation is opti
 
 TARS AI advice requires `GEMINI_API_KEY`. Add it to a local `.env` file based on `.env.example`. The weather, NASA, and farm-planning features do not require a Gemini key.
 
+## Supabase sign-in
+
+The app requires an account before opening the farm planner. In Supabase, enable **Authentication → Providers → Email**. Set the project **Site URL** to `http://localhost:3000` for local work and add your deployed site URL to the allowed redirect URLs.
+
+Copy the project URL and its public anon/publishable key from Supabase into `.env`:
+
+```env
+VITE_SUPABASE_URL="https://YOUR_PROJECT_ID.supabase.co"
+VITE_SUPABASE_ANON_KEY="YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY"
+SUPABASE_URL="https://YOUR_PROJECT_ID.supabase.co"
+SUPABASE_ANON_KEY="YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY"
+```
+
+Restart `npm run dev`, then create an account or sign in. The `VITE_*` values are included in the browser build; only use the public anon/publishable key there. **Never use or expose a Supabase service-role/secret key.** In deployment, set the `VITE_*` variables in the build environment and the server variables in the runtime environment.
+
+The server verifies the Supabase access token for every `/api/*` route except `/api/health`. Farm plots, plans, and notes are stored in separate per-user files by the current JSON storage adapter; authentication is not yet backed by Supabase database tables or RLS. On Vercel, the adapter uses ephemeral `/tmp` storage, so production farm data needs a persistent database to survive restarts. Pre-authentication shared JSON data is not automatically assigned to a user. The Supabase **Authentication → Users** page shows registered accounts, but this app does not currently record a user activity timeline or farm-action audit log.
+
 For a production build:
 
 ```bash

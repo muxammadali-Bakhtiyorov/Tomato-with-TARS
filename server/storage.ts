@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import type { FarmFieldPlot, FarmNote, SavedFarmPlan } from '../src/types/farm.ts';
 
 interface AlmanacStore {
@@ -12,19 +13,24 @@ const DATA_DIR =
   process.env.VERCEL === '1'
     ? path.join('/tmp', 'tars-data')
     : path.resolve(process.cwd(), 'data');
-const STORE_PATH = path.join(DATA_DIR, 'farm-almanac.json');
 
-function ensureStore(): AlmanacStore {
+function storePath(userId: string): string {
+  const userHash = createHash('sha256').update(userId).digest('hex');
+  return path.join(DATA_DIR, `farm-almanac-${userHash}.json`);
+}
+
+function ensureStore(userId: string): AlmanacStore {
+  const userStorePath = storePath(userId);
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  if (!fs.existsSync(STORE_PATH)) {
+  if (!fs.existsSync(userStorePath)) {
     const initial: AlmanacStore = { fields: [], plans: [], notes: [] };
-    fs.writeFileSync(STORE_PATH, JSON.stringify(initial, null, 2), 'utf8');
+    fs.writeFileSync(userStorePath, JSON.stringify(initial, null, 2), 'utf8');
     return initial;
   }
   try {
-    const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as Partial<AlmanacStore>;
+    const parsed = JSON.parse(fs.readFileSync(userStorePath, 'utf8')) as Partial<AlmanacStore>;
     return {
       fields: Array.isArray(parsed.fields) ? parsed.fields : [],
       plans: Array.isArray(parsed.plans) ? parsed.plans : [],
@@ -32,29 +38,30 @@ function ensureStore(): AlmanacStore {
     };
   } catch {
     const fallback: AlmanacStore = { fields: [], plans: [], notes: [] };
-    fs.writeFileSync(STORE_PATH, JSON.stringify(fallback, null, 2), 'utf8');
+    fs.writeFileSync(userStorePath, JSON.stringify(fallback, null, 2), 'utf8');
     return fallback;
   }
 }
 
-function writeStore(store: AlmanacStore): void {
+function writeStore(userId: string, store: AlmanacStore): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  fs.writeFileSync(STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  fs.writeFileSync(storePath(userId), JSON.stringify(store, null, 2), 'utf8');
 }
 
-export function listFields(): FarmFieldPlot[] {
-  return ensureStore().fields;
+export function listFields(userId: string): FarmFieldPlot[] {
+  return ensureStore(userId).fields;
 }
 
 export function addFieldPlot(
+  userId: string,
   input: Pick<
     FarmFieldPlot,
     'name' | 'areaHa' | 'locationQuery' | 'lat' | 'lon' | 'anchorCrop' | 'goal' | 'plantedDate'
   >
 ): FarmFieldPlot {
-  const store = ensureStore();
+  const store = ensureStore(userId);
   const emojiMap: Record<string, string> = {
     tomatoes: '🍅',
     peppers: '🫑',
@@ -84,11 +91,12 @@ export function addFieldPlot(
     reminderFoot: 'Weather and soil context may include historical estimates',
   };
   store.fields.push(plot);
-  writeStore(store);
+  writeStore(userId, store);
   return plot;
 }
 
 export function updateFieldPlot(
+  userId: string,
   id: string,
   input: Partial<
     Pick<
@@ -97,7 +105,7 @@ export function updateFieldPlot(
     >
   >
 ): FarmFieldPlot | null {
-  const store = ensureStore();
+  const store = ensureStore(userId);
   const idx = store.fields.findIndex((f) => f.id === id);
   if (idx === -1) return null;
 
@@ -133,46 +141,46 @@ export function updateFieldPlot(
   };
 
   store.fields[idx] = updated;
-  writeStore(store);
+  writeStore(userId, store);
   return updated;
 }
 
-export function removeFieldPlot(id: string): FarmFieldPlot[] {
-  const store = ensureStore();
+export function removeFieldPlot(userId: string, id: string): FarmFieldPlot[] {
+  const store = ensureStore(userId);
   store.fields = store.fields.filter((f) => f.id !== id);
-  writeStore(store);
+  writeStore(userId, store);
   return store.fields;
 }
 
-export function listSavedPlans(): SavedFarmPlan[] {
-  return ensureStore().plans;
+export function listSavedPlans(userId: string): SavedFarmPlan[] {
+  return ensureStore(userId).plans;
 }
 
-export function saveFarmPlan(plan: Omit<SavedFarmPlan, 'id' | 'savedAt'>): SavedFarmPlan {
-  const store = ensureStore();
+export function saveFarmPlan(userId: string, plan: Omit<SavedFarmPlan, 'id' | 'savedAt'>): SavedFarmPlan {
+  const store = ensureStore(userId);
   const entry: SavedFarmPlan = {
     ...plan,
     id: `plan_${Date.now()}`,
     savedAt: new Date().toISOString().slice(0, 10),
   };
   store.plans = [entry, ...store.plans].slice(0, 20);
-  writeStore(store);
+  writeStore(userId, store);
   return entry;
 }
 
-export function deleteSavedPlan(id: string): SavedFarmPlan[] {
-  const store = ensureStore();
+export function deleteSavedPlan(userId: string, id: string): SavedFarmPlan[] {
+  const store = ensureStore(userId);
   store.plans = store.plans.filter((p) => p.id !== id);
-  writeStore(store);
+  writeStore(userId, store);
   return store.plans;
 }
 
-export function listFarmNotes(): FarmNote[] {
-  return ensureStore().notes;
+export function listFarmNotes(userId: string): FarmNote[] {
+  return ensureStore(userId).notes;
 }
 
-export function addFarmNote(text: string): FarmNote {
-  const store = ensureStore();
+export function addFarmNote(userId: string, text: string): FarmNote {
+  const store = ensureStore(userId);
   const clean = text.trim().slice(0, 240);
   const note: FarmNote = {
     id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -180,13 +188,13 @@ export function addFarmNote(text: string): FarmNote {
     createdAt: new Date().toISOString().slice(0, 10),
   };
   store.notes = [note, ...store.notes].slice(0, 30);
-  writeStore(store);
+  writeStore(userId, store);
   return note;
 }
 
-export function deleteFarmNote(id: string): FarmNote[] {
-  const store = ensureStore();
+export function deleteFarmNote(userId: string, id: string): FarmNote[] {
+  const store = ensureStore(userId);
   store.notes = store.notes.filter((n) => n.id !== id);
-  writeStore(store);
+  writeStore(userId, store);
   return store.notes;
 }

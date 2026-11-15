@@ -19,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { readStorage, STORAGE_KEYS, writeStorage } from '../lib/persistence';
+import { apiFetch } from '../lib/supabase';
 import type {
   AnchorCrop,
   CustomCropId,
@@ -199,7 +200,7 @@ export function SummaryPage({
   const runEvaluation = async (cropsToCheck: [CustomCropId, CustomCropId, CustomCropId, CustomCropId]) => {
     setEvaluating(true);
     try {
-      const res = await fetch('/api/rotations/evaluate', {
+      const res = await apiFetch('/api/rotations/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

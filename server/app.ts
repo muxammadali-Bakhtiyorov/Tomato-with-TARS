@@ -1,4 +1,5 @@
 import express from 'express';
+import { createClient } from '@supabase/supabase-js';
 import { buildAgronomicPlan, evaluateCustomRotation } from './agronomyEngine.ts';
 import { generateFarmAiAdvice, runTarsChat, type ChatRequestPayload } from './geminiService.ts';
 import { estimateSandboxEconomics, getCountryMarketDataset } from './marketService.ts';
@@ -58,12 +59,59 @@ function parseCustomCrop(raw: unknown): CustomCropId {
     : 'tomatoes';
 }
 
+function getAuthUserId(res: express.Response): string {
+  const userId: unknown = res.locals.userId;
+  if (typeof userId !== 'string') throw new Error('Authenticated user is missing.');
+  return userId;
+}
+
 export function createApiApp() {
   const app = express();
   app.use(express.json());
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, service: 'Tomatoes with TARS NASA Almanac' });
+  });
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseAuth =
+    supabaseUrl && supabaseKey
+      ? createClient(supabaseUrl, supabaseKey, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        })
+      : null;
+
+  app.use('/api', async (req, res, next) => {
+    if (!supabaseAuth) {
+      res.status(503).json({ error: 'Supabase authentication is not configured on the server.' });
+      return;
+    }
+
+    const token = req.header('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!token) {
+      res.status(401).json({ error: 'Sign in is required.' });
+      return;
+    }
+
+    try {
+      const { data, error } = await supabaseAuth.auth.getUser(token);
+      if (error || !data.user) {
+        const status = error && typeof error.status === 'number' && error.status >= 500 ? 503 : 401;
+        res.status(status).json({
+          error: status === 401 ? 'Your session is invalid or expired.' : 'Unable to verify your session.',
+        });
+        return;
+      }
+      res.locals.userId = data.user.id;
+      next();
+    } catch (error) {
+      console.error('Supabase session verification failed:', error);
+      res.status(503).json({ error: 'Unable to verify your session.' });
+    }
   });
 
   app.get('/api/nasa/telemetry', async (req, res) => {
@@ -225,6 +273,7 @@ export function createApiApp() {
       const advice = await generateFarmAiAdvice({
         farmData: body.farmData,
         activeField: body.activeField,
+        userId: getAuthUserId(res),
       });
       res.json(advice);
     } catch (err) {
@@ -234,7 +283,7 @@ export function createApiApp() {
   });
 
   app.get('/api/fields', (_req, res) => {
-    res.json({ fields: listFields() });
+    res.json({ fields: listFields(getAuthUserId(res)) });
   });
 
   app.post('/api/fields', async (req, res) => {
@@ -252,7 +301,8 @@ export function createApiApp() {
         return;
       }
       const loc = await resolveLocation(locationQuery || name);
-      const created = addFieldPlot({
+      const userId = getAuthUserId(res);
+      const created = addFieldPlot(userId, {
         name,
         areaHa: Number(areaHa) || 40,
         locationQuery: loc.name,
@@ -262,7 +312,7 @@ export function createApiApp() {
         goal: parseGoal(goal),
         plantedDate: typeof plantedDate === 'string' && plantedDate.trim() ? plantedDate.trim() : undefined,
       });
-      res.status(201).json({ field: created, fields: listFields() });
+      res.status(201).json({ field: created, fields: listFields(userId) });
     } catch (err) {
       console.error('Create field error:', err);
       res.status(500).json({ error: 'Failed to create farm plot' });
@@ -279,7 +329,7 @@ export function createApiApp() {
         goal?: string;
         plantedDate?: string;
       };
-      const updates: Parameters<typeof updateFieldPlot>[1] = {};
+      const updates: Parameters<typeof updateFieldPlot>[2] = {};
       if (typeof name === 'string' && name.trim()) updates.name = name;
       if (typeof areaHa === 'number' && Number.isFinite(areaHa)) updates.areaHa = areaHa;
       if (typeof anchorCrop === 'string') updates.anchorCrop = parseCrop(anchorCrop);
@@ -292,12 +342,13 @@ export function createApiApp() {
         updates.lon = loc.lon;
       }
 
-      const updated = updateFieldPlot(req.params.id, updates);
+      const userId = getAuthUserId(res);
+      const updated = updateFieldPlot(userId, req.params.id, updates);
       if (!updated) {
         res.status(404).json({ error: 'Farm plot not found' });
         return;
       }
-      res.json({ field: updated, fields: listFields() });
+      res.json({ field: updated, fields: listFields(userId) });
     } catch (err) {
       console.error('Update field error:', err);
       res.status(500).json({ error: 'Failed to update farm plot' });
@@ -305,12 +356,12 @@ export function createApiApp() {
   });
 
   app.delete('/api/fields/:id', (req, res) => {
-    const fields = removeFieldPlot(req.params.id);
+    const fields = removeFieldPlot(getAuthUserId(res), req.params.id);
     res.json({ fields });
   });
 
   app.get('/api/plans', (_req, res) => {
-    res.json({ plans: listSavedPlans() });
+    res.json({ plans: listSavedPlans(getAuthUserId(res)) });
   });
 
   app.post('/api/plans', (req, res) => {
@@ -332,7 +383,8 @@ export function createApiApp() {
         res.status(400).json({ error: 'Missing required farm plan fields' });
         return;
       }
-      const saved = saveFarmPlan({
+      const userId = getAuthUserId(res);
+      const saved = saveFarmPlan(userId, {
         locationName: body.locationName,
         coordsLabel: body.coordsLabel || '',
         lat: Number(body.lat) || 0,
@@ -345,7 +397,7 @@ export function createApiApp() {
         plantingOrderSummary: body.plantingOrderSummary,
         headlineTip: body.headlineTip || '',
       });
-      res.status(201).json({ plan: saved, plans: listSavedPlans() });
+      res.status(201).json({ plan: saved, plans: listSavedPlans(userId) });
     } catch (err) {
       console.error('Save plan error:', err);
       res.status(500).json({ error: 'Failed to save farm plan' });
@@ -353,12 +405,12 @@ export function createApiApp() {
   });
 
   app.delete('/api/plans/:id', (req, res) => {
-    const plans = deleteSavedPlan(req.params.id);
+    const plans = deleteSavedPlan(getAuthUserId(res), req.params.id);
     res.json({ plans });
   });
 
   app.get('/api/notes', (_req, res) => {
-    res.json({ notes: listFarmNotes() });
+    res.json({ notes: listFarmNotes(getAuthUserId(res)) });
   });
 
   app.post('/api/notes', (req, res) => {
@@ -367,19 +419,20 @@ export function createApiApp() {
       res.status(400).json({ error: 'Note text is required' });
       return;
     }
-    const note = addFarmNote(body.text);
-    res.status(201).json({ note, notes: listFarmNotes() });
+    const userId = getAuthUserId(res);
+    const note = addFarmNote(userId, body.text);
+    res.status(201).json({ note, notes: listFarmNotes(userId) });
   });
 
   app.delete('/api/notes/:id', (req, res) => {
-    const notes = deleteFarmNote(req.params.id);
+    const notes = deleteFarmNote(getAuthUserId(res), req.params.id);
     res.json({ notes });
   });
 
   app.post('/api/chat', async (req, res) => {
     try {
       const payload = req.body as ChatRequestPayload;
-      const result = await runTarsChat(payload);
+      const result = await runTarsChat(payload, getAuthUserId(res));
       res.json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to reach TARS AI right now.';
