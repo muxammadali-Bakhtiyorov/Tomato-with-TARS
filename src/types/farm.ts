@@ -153,7 +153,9 @@ export interface DatasetFeedProof {
   provider: string;
   status:
     | 'Current forecast'
+    | 'Current model conditions'
     | 'Historical data'
+    | 'Historical estimate'
     | 'Climatology'
     | 'Modeled'
     | 'Estimated'
@@ -169,7 +171,11 @@ export interface DatasetFeedStatus {
     | 'NASA POWER climatology'
     | 'Open-Meteo historical reanalysis'
     | 'Regional seasonal estimate';
-  powerDaily: 'NASA POWER daily' | 'Unavailable';
+  powerDaily:
+    | 'NASA POWER daily'
+    | 'Historical estimate'
+    | 'Climatology'
+    | 'Regional estimate';
   modisNdvi:
     | 'NASA MODIS observation'
     | 'Estimated from NASA POWER'

@@ -69,7 +69,7 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
     rainChancePct: 30,
     rainyDaysNext14: 2,
     verdictLabel: 'Syncing Forecast...',
-    plainSummary: 'Checking 14-day rainfall outlook and NASA satellite soil moisture...',
+    plainSummary: 'Checking the 14-day forecast and gridded climate and soil-moisture data...',
     source: 'Regional seasonal estimate',
     dailyForecast: [],
   },
@@ -195,7 +195,7 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
   },
   feeds: {
     climateSource: 'Regional seasonal estimate',
-    powerDaily: 'Unavailable',
+    powerDaily: 'Regional estimate',
     modisNdvi: 'Regional vegetation estimate',
     soilGrids: 'Regional baseline',
     forecast: 'NASA POWER climatology',
@@ -229,7 +229,7 @@ export default function App() {
 
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
-  const [scanMessage, setScanMessage] = useState('Locking onto NASA POWER & SMAP moisture...');
+  const [scanMessage, setScanMessage] = useState('Loading NASA POWER climate and historical weather data...');
   const [savingPlan, setSavingPlan] = useState(false);
   const [aiAdvice, setAiAdvice] = useState<FarmAiAdvice | null>(null);
   const [loadingAiAdvice, setLoadingAiAdvice] = useState(false);
@@ -302,13 +302,15 @@ export default function App() {
         areaHa?: number;
         plantedDate?: string;
         showModal?: boolean;
+        forceRefresh?: boolean;
       } = {}
     ) => {
       const showModal = opts.showModal ?? false;
+      const forceRefresh = opts.forceRefresh ?? showModal;
       if (showModal) {
         setScanning(true);
         setScanProgress(22);
-        setScanMessage('Resolving farm coordinates & SoilGrids profile...');
+        setScanMessage('Resolving farm location and choosing data sources...');
       }
 
       const params = new URLSearchParams();
@@ -320,15 +322,18 @@ export default function App() {
       if (opts.farmName) params.set('farmName', opts.farmName);
       if (typeof opts.areaHa === 'number' && opts.areaHa > 0) params.set('areaHa', String(opts.areaHa));
       if (opts.plantedDate) params.set('plantedDate', opts.plantedDate);
+      if (forceRefresh) params.set('refresh', '1');
 
       try {
         if (showModal) {
           window.setTimeout(() => {
             setScanProgress(58);
-            setScanMessage('Querying NASA POWER moisture, rainfall, temperature & MODIS NDVI...');
+            setScanMessage('Checking live weather, MODIS, SoilGrids & historical sources...');
           }, 150);
         }
-        const res = await fetch(`/api/nasa/telemetry?${params.toString()}`);
+        const res = await fetch(`/api/nasa/telemetry?${params.toString()}`, {
+          cache: forceRefresh ? 'no-store' : 'default',
+        });
         if (!res.ok) throw new Error('Telemetry request failed');
         const nextData = (await res.json()) as NasaFarmResponse;
         setData(nextData);
@@ -338,14 +343,14 @@ export default function App() {
           window.setTimeout(() => {
             setScanning(false);
             setScanProgress(0);
-            showToast(`NASA telemetry updated for ${nextData.location.name}`);
+            showToast(`Farm data refreshed for ${nextData.location.name}`);
           }, 320);
         }
       } catch {
         if (showModal) {
           setScanning(false);
           setScanProgress(0);
-          showToast('Using cached NASA baseline (network timeout)');
+          showToast('Could not reach the data service; keeping the last loaded data.');
         }
       }
     },
@@ -880,6 +885,7 @@ export default function App() {
                       lat: data.location.lat,
                       lon: data.location.lon,
                       showModal: true,
+                      forceRefresh: true,
                     })
                   }
                 />

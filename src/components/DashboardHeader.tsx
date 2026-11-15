@@ -18,7 +18,7 @@ const TABS: {
 }[] = [
   { key: 'farm', label: '1. My Farm', sublabel: 'Plots, planted dates & AI advice', Icon: Sprout },
   { key: 'summary', label: '2. Rotation Planner', sublabel: '4-season rotation & economics', Icon: Sparkles },
-  { key: 'analytics', label: '3. Analytics & NASA Data', sublabel: 'Satellite charts & live feeds', Icon: BarChart3 },
+  { key: 'analytics', label: '3. Analytics & NASA Data', sublabel: 'Environmental data & source status', Icon: BarChart3 },
 ];
 
 export function DashboardHeader({

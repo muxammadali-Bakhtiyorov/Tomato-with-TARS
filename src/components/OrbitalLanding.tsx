@@ -117,8 +117,8 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
           </div>
 
           <p className="text-slate-300/90 text-sm sm:text-base leading-relaxed max-w-xl">
-            Multigenerational farming wisdom meets open NASA Earth observations. Pull live satellite soil moisture,
-            rainfall, land temperature, and vegetation greenness to plan crop rotations and save water.
+            Multigenerational farming wisdom meets NASA POWER climate data, historical weather, and MODIS vegetation observations when available.
+            Plan crop rotations with clear labels when a value is estimated rather than measured.
           </p>
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -136,17 +136,17 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
               <div className="font-serif font-bold text-2xl sm:text-3xl text-white tabular-nums">
                 250m<span className="text-emerald-400 text-sm font-mono">/px</span>
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">MODIS Canopy NDVI</div>
+              <div className="text-xs text-slate-400 mt-0.5">MODIS pixel size, when available</div>
             </div>
             <div>
               <div className="font-serif font-bold text-2xl sm:text-3xl text-white tabular-nums">
                 24<span className="text-slate-300 text-sm font-mono">hr</span>
               </div>
-              <div className="text-xs text-slate-400 mt-0.5">SMAP / POWER Moisture</div>
+              <div className="text-xs text-slate-400 mt-0.5">Daily gridded weather data</div>
             </div>
             <div>
               <div className="font-serif font-bold text-2xl sm:text-3xl text-white tabular-nums">
-                30<span className="text-amber-300 text-sm font-mono">yr</span>
+                25<span className="text-amber-300 text-sm font-mono">yr</span>
               </div>
               <div className="text-xs text-slate-400 mt-0.5">NASA Climate Archive</div>
             </div>
@@ -255,7 +255,7 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
               <div className="mt-1 px-2.5 py-1 rounded-md bg-orbital-card/90 border border-amber-500/30 backdrop-blur-md font-mono text-[10px] text-slate-200 flex items-center gap-1.5 shadow-lg whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                 <span>
-                  TARS-SAT 02 &middot; <span className="text-amber-300">SMAP</span>
+                  TARS DATA 02 &middot; <span className="text-amber-300">HISTORY</span>
                 </span>
               </div>
             </div>
@@ -319,15 +319,15 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
           {/* Telemetry HUD Card */}
           <div className="w-full max-w-[360px] bg-orbital-card/90 border border-emerald-500/30 backdrop-blur-xl rounded-2xl p-4 shadow-2xl shadow-black/70">
             <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-              <span className="text-emerald-400 font-semibold tracking-wider">TARS-SAT 01 ACTIVE</span>
+              <span className="text-emerald-400 font-semibold tracking-wider">TARS DATA LINK</span>
               <span className="text-slate-400">KEYLESS OPEN TELEMETRY</span>
             </div>
-            <div className="font-serif font-bold text-sm text-white mb-1">Soil &amp; Canopy Monitoring</div>
+            <div className="font-serif font-bold text-sm text-white mb-1">Climate &amp; Vegetation Context</div>
             <p className="text-[11px] text-slate-300/85 leading-relaxed mb-2.5">
-              Translating NASA POWER moisture, rainfall, temperature &amp; MODIS NDVI into farmer-friendly crop rotations.
+              Translating gridded climate and historical weather into farmer-friendly crop guidance; MODIS is used only when a pixel is returned.
             </p>
             <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] font-mono">
-              <span className="text-slate-400">Field Vigor Index:</span>
+              <span className="text-slate-400">Seasonal vegetation estimate:</span>
               <span className="text-emerald-400 font-semibold tabular-nums">
                 {currentNdvi.toFixed(2)} NDVI ({currentNdvi >= 0.55 ? 'Optimal' : 'Seasonal'})
               </span>
@@ -338,7 +338,7 @@ export function OrbitalLanding({ visible, currentNdvi, onEnterDashboard }: Orbit
 
       <div className="relative z-10 max-w-7xl w-full mx-auto px-4 sm:px-8 py-4 flex flex-col sm:flex-row items-center justify-between text-[11px] font-mono text-slate-500 border-t border-white/5 gap-2">
         <span>NASA-POWERED FARM INSIGHTS &middot; ZERO API KEYS REQUIRED</span>
-        <span className="text-center">NASA POWER &bull; SMAP MOISTURE &bull; MODIS NDVI &bull; GPM RAINFALL</span>
+        <span className="text-center">NASA POWER &bull; HISTORICAL WEATHER &bull; MODIS WHEN AVAILABLE</span>
       </div>
     </section>
   );

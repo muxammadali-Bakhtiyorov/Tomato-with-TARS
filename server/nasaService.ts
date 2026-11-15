@@ -352,8 +352,8 @@ async function fetchPowerRecentDaily(
   lon: number
 ): Promise<{ rows: RecentDailyObservation[]; url: string }> {
   const now = new Date();
-  const end = new Date(now.getTime() - 5 * 86400_000);
-  const start = new Date(end.getTime() - 15 * 86400_000);
+  const end = new Date(now.getTime() - 86400_000);
+  const start = new Date(end.getTime() - 29 * 86400_000);
 
   const url =
     `https://power.larc.nasa.gov/api/temporal/daily/point` +
@@ -410,10 +410,20 @@ async function fetchPowerRecentDaily(
 async function fetchUpcomingForecast(
   lat: number,
   lon: number
-): Promise<{ days: ForecastDay[]; url: string }> {
+): Promise<{
+  days: ForecastDay[];
+  current?: {
+    time: string;
+    temperatureC: number;
+    relativeHumidityPct: number;
+    precipitationMm: number;
+  };
+  url: string;
+}> {
   const url =
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+    `&current=temperature_2m,relative_humidity_2m,precipitation` +
     `&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min` +
     `&forecast_days=14&timezone=auto`;
 
@@ -421,6 +431,12 @@ async function fetchUpcomingForecast(
     const res = await fetchWithTimeout(url, 4500);
     if (!res.ok) return { days: [], url };
     const json = (await res.json()) as {
+      current?: {
+        time?: string;
+        temperature_2m?: number;
+        relative_humidity_2m?: number;
+        precipitation?: number;
+      };
       daily?: {
         time?: string[];
         precipitation_sum?: number[];
@@ -430,7 +446,27 @@ async function fetchUpcomingForecast(
       };
     };
     const d = json.daily;
-    if (!d?.time || d.time.length === 0) return { days: [], url };
+    const current = json.current;
+    const currentConditions =
+      typeof current?.time === 'string' &&
+      typeof current.temperature_2m === 'number' &&
+      typeof current.relative_humidity_2m === 'number' &&
+      typeof current.precipitation === 'number' &&
+      [
+        current.temperature_2m,
+        current.relative_humidity_2m,
+        current.precipitation,
+      ].every(Number.isFinite)
+        ? {
+            time: current.time,
+            temperatureC: Math.round(current.temperature_2m * 10) / 10,
+            relativeHumidityPct: Math.round(current.relative_humidity_2m),
+            precipitationMm: Math.round(current.precipitation * 10) / 10,
+          }
+        : undefined;
+    if (!d?.time || d.time.length === 0) {
+      return { days: [], current: currentConditions, url };
+    }
 
     const days: ForecastDay[] = [];
     for (const [idx, date] of d.time.entries()) {
@@ -455,7 +491,7 @@ async function fetchUpcomingForecast(
         tempMinC: Math.round(tempMin * 10) / 10,
       });
     }
-    return { days, url };
+    return { days, current: currentConditions, url };
   } catch {
     return { days: [], url };
   }
@@ -477,9 +513,7 @@ async function fetchHistoricalWeather(
     `&hourly=soil_moisture_0_to_7cm,soil_moisture_7_to_28cm&timezone=UTC`;
 
   try {
-    const res = await fetchWithTimeout(url, 12000);
-    if (!res.ok) return null;
-    const json = (await res.json()) as {
+    const { response: res, data: json } = await fetchJsonWithTimeout<{
       daily?: {
         time?: string[];
         temperature_2m_max?: Array<number | null>;
@@ -492,7 +526,9 @@ async function fetchHistoricalWeather(
         soil_moisture_0_to_7cm?: Array<number | null>;
         soil_moisture_7_to_28cm?: Array<number | null>;
       };
-    };
+    }>(url, 12000);
+    if (!res.ok) return null;
+    if (!json) return null;
     const daily = json.daily;
     const hourly = json.hourly;
     if (!daily?.time?.length || !hourly?.time?.length) return null;
@@ -703,7 +739,8 @@ async function fetchSoilGridsProfile(
   const url =
     `https://rest.isric.org/soilgrids/v2.0/properties/query` +
     `?lon=${lon.toFixed(4)}&lat=${lat.toFixed(4)}` +
-    `&property=phh2o&property=soc&property=clay&property=sand&depth=0-5cm&value=mean`;
+    `&property=phh2o&property=soc&property=clay&property=sand` +
+    `&depth=0-5cm&depth=5-15cm&depth=15-30cm&value=mean`;
 
   const fallback: SoilProfile = {
     type:
@@ -726,7 +763,7 @@ async function fetchSoilGridsProfile(
       properties?: {
         layers?: Array<{
           name: string;
-          depths?: Array<{ values?: { mean?: number } }>;
+          depths?: Array<{ label: string; values?: { mean?: number } }>;
         }>;
       };
     }>(url, 15000);
@@ -736,9 +773,25 @@ async function fetchSoilGridsProfile(
       return { soil: fallback, url, error: 'ISRIC returned no soil-property layers' };
     }
 
+    const soilDepths = ['0-5cm', '5-15cm', '15-30cm'];
+    const mappedDepth = soilDepths.find((depth) =>
+      ['phh2o', 'soc', 'clay', 'sand'].every((name) => {
+        const layer = layers.find((item) => item.name === name);
+        const mean = layer?.depths?.find((item) => item.label === depth)?.values?.mean;
+        return typeof mean === 'number' && Number.isFinite(mean);
+      })
+    );
+    if (!mappedDepth) {
+      return {
+        soil: fallback,
+        url,
+        error: 'ISRIC returned no mapped soil values for the requested 0–30 cm profile at this location',
+      };
+    }
+
     const getVal = (name: string): number | null => {
       const layer = layers.find((l) => l.name === name);
-      const mean = layer?.depths?.[0]?.values?.mean;
+      const mean = layer?.depths?.find((item) => item.label === mappedDepth)?.values?.mean;
       return typeof mean === 'number' && Number.isFinite(mean) ? mean : null;
     };
 
@@ -792,7 +845,10 @@ async function fetchSoilGridsProfile(
   }
 }
 
-export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
+export async function getNasaEnvironmentData(
+  loc: ResolvedLocation,
+  options: { forceRefresh?: boolean } = {}
+): Promise<{
   location: ResolvedLocation;
   telemetry: MonthlyTelemetry;
   recentDaily: RecentDailyObservation[];
@@ -802,7 +858,7 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
 }> {
   const cacheKey = `${loc.lat.toFixed(3)},${loc.lon.toFixed(3)}`;
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (!options.forceRefresh && cached && cached.expiresAt > Date.now()) {
     const annualRain = cached.data.telemetry.rainfall.reduce((a, b) => a + b, 0);
     return {
       location: { ...loc, climateZone: classifyClimateZone(annualRain) },
@@ -816,18 +872,17 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
     forecastRes,
     modisRes,
     soilRes,
+    historicalWeatherRes,
   ] = await Promise.all([
     fetchPowerClimatology(loc.lat, loc.lon).catch(() => null),
     fetchPowerRecentDaily(loc.lat, loc.lon),
     fetchUpcomingForecast(loc.lat, loc.lon),
     fetchModisNdviLatest(loc.lat, loc.lon),
     fetchSoilGridsProfile(loc.lat, loc.lon, loc.presetKey),
+    fetchHistoricalWeather(loc.lat, loc.lon).catch(() => null),
   ]);
 
   const modisLatest = modisRes.observation;
-  const historicalWeatherRes = powerClimoRes
-    ? null
-    : await fetchHistoricalWeather(loc.lat, loc.lon).catch(() => null);
   const climateSource: DatasetFeedStatus['climateSource'] = powerClimoRes
     ? 'NASA POWER climatology'
     : historicalWeatherRes
@@ -840,6 +895,13 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
   const recentDaily = recentDailyRes.rows;
   const forecastDaily = forecastRes.days;
   const soil = soilRes.soil;
+  const vegetationWeather = historicalWeatherRes?.telemetry ?? telemetry;
+  const vegetationEstimate = estimatedVegetationIndices(
+    vegetationWeather.tempMax,
+    vegetationWeather.rootMoisture
+  );
+  telemetry.ndvi = vegetationEstimate.ndvi;
+  telemetry.evi = vegetationEstimate.evi;
 
   const curMonthIdx = new Date().getUTCMonth();
   if (modisLatest) {
@@ -858,92 +920,149 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
     powerClimoRes?.url ||
     `https://power.larc.nasa.gov/api/temporal/climatology/point?parameters=PRECTOTCORR,T2M,T2M_RANGE,TS,GWETROOT,GWETTOP,ALLSKY_SFC_SW_DWN&community=AG&longitude=${loc.lon.toFixed(4)}&latitude=${loc.lat.toFixed(4)}&format=JSON`;
   const modisDatesUrl = `https://modis.ornl.gov/rst/api/v1/MOD13Q1/dates?latitude=${loc.lat.toFixed(4)}&longitude=${loc.lon.toFixed(4)}`;
-  const vegetationEstimateSource =
-    climateSource === 'NASA POWER climatology'
-      ? 'NASA POWER climate variables'
-      : climateSource === 'Open-Meteo historical reanalysis'
-        ? 'Open-Meteo historical reanalysis'
-        : 'regional fallback climate values';
-  const proofs: DatasetFeedProof[] = [
-    {
-      id: 'power-climo',
-      name: 'NASA POWER Agroclimatology',
-      provider: 'NASA Langley Research Center',
-      status: powerClimoRes ? 'Climatology' : 'Unavailable',
-      endpointUrl: powerClimoUrl,
-      sampleReading: powerClimoRes
-        ? `${powerClimoRes.period} · July typical daily high ${telemetry.tempMax[6]}°C · annual precipitation ${annualRain} mm`
-        : 'No complete NASA POWER monthly climatology was returned for this location.',
-      lastCheckedIso: nowIso,
-    },
-  ];
-  if (historicalWeatherRes) {
+  const vegetationEstimateSource = historicalWeatherRes
+    ? `Open-Meteo historical reanalysis (${historicalWeatherRes.period})`
+    : powerClimoRes
+      ? `NASA POWER climatology (${powerClimoRes.period})`
+      : 'regional seasonal climate estimates';
+  const vegetationEstimateStatus: DatasetFeedProof['status'] = historicalWeatherRes
+    ? 'Historical estimate'
+    : powerClimoRes
+      ? 'Climatology'
+      : 'Estimated';
+  const climateProof: DatasetFeedProof = powerClimoRes
+    ? {
+        id: 'power-climo',
+        name: 'NASA POWER Agroclimatology',
+        provider: 'NASA Langley Research Center',
+        status: 'Climatology',
+        endpointUrl: powerClimoUrl,
+        sampleReading: `${powerClimoRes.period} · July typical daily high ${telemetry.tempMax[6]}°C · annual precipitation ${annualRain} mm`,
+        lastCheckedIso: nowIso,
+      }
+    : historicalWeatherRes
+      ? {
+          id: 'open-meteo-history',
+          name: 'Historical Climate Profile',
+          provider: 'Open-Meteo historical reanalysis',
+          status: 'Historical data',
+          endpointUrl: historicalWeatherRes.url,
+          sampleReading: `NASA POWER climatology did not return; using ${historicalWeatherRes.period} monthly temperature, precipitation and modeled soil-moisture history.`,
+          lastCheckedIso: nowIso,
+        }
+      : {
+          id: 'seasonal-estimate',
+          name: 'Regional Seasonal Estimate',
+          provider: 'Built-in climate baseline',
+          status: 'Estimated',
+          endpointUrl: powerClimoUrl,
+          sampleReading: `NASA POWER and historical weather did not return; showing regional seasonal estimates · July high ${telemetry.tempMax[6]}°C · annual precipitation ${annualRain} mm.`,
+          lastCheckedIso: nowIso,
+        };
+  const proofs: DatasetFeedProof[] = [climateProof];
+  if (forecastRes.current) {
     proofs.push({
-      id: 'open-meteo-history',
-      name: 'Historical Weather Reanalysis',
-      provider: 'Open-Meteo archive API',
-      status: 'Historical data',
-      endpointUrl: historicalWeatherRes.url,
-      sampleReading: `${historicalWeatherRes.period} · monthly temperature, precipitation and modeled soil moisture; surface temperature and vegetation indices remain estimates.`,
+      id: 'open-meteo-current',
+      name: 'Current Weather Conditions',
+      provider: 'Open-Meteo Global Weather API · current model analysis',
+      status: 'Current model conditions',
+      endpointUrl: forecastRes.url,
+      sampleReading:
+        `${forecastRes.current.time} · ${forecastRes.current.temperatureC}°C · ` +
+        `${forecastRes.current.relativeHumidityPct}% humidity · ` +
+        `${forecastRes.current.precipitationMm} mm precipitation for the current model interval; not an on-farm sensor reading.`,
       lastCheckedIso: nowIso,
     });
-  } else if (!powerClimoRes) {
+  } else {
     proofs.push({
-      id: 'seasonal-estimate',
-      name: 'Regional Seasonal Fallback',
-      provider: 'Built-in estimate',
-      status: 'Fallback',
-      sampleReading: `No complete NASA POWER or Open-Meteo historical data was returned. Regional seasonal estimates are being shown · July high ${telemetry.tempMax[6]}°C · annual precipitation ${annualRain} mm.`,
+      id: 'open-meteo-current',
+      name: 'Current Weather Conditions',
+      provider: 'Open-Meteo Global Weather API',
+      status: 'Unavailable',
+      endpointUrl: forecastRes.url,
+      sampleReading: 'The current-conditions request did not return usable values.',
+      lastCheckedIso: nowIso,
+    });
+  }
+  if (powerClimoRes && historicalWeatherRes) {
+    proofs.push({
+      id: 'open-meteo-history',
+      name: 'Recent Historical Weather',
+      provider: 'Open-Meteo historical reanalysis',
+      status: 'Historical data',
+      endpointUrl: historicalWeatherRes.url,
+      sampleReading: `${historicalWeatherRes.period} · monthly weather history used to estimate seasonal vegetation when MODIS pixels are unavailable.`,
       lastCheckedIso: nowIso,
     });
   }
   proofs.push(
     {
       id: 'power-daily',
-      name: 'NASA POWER Daily Point Data',
-      provider: 'NASA Langley Research Center',
-      status: latestDaily ? 'Historical data' : 'Unavailable',
-      endpointUrl: recentDailyRes.url,
+      name: latestDaily ? 'NASA POWER Daily Point Data' : 'Daily Weather Context',
+      provider: latestDaily
+        ? 'NASA Langley Research Center'
+        : historicalWeatherRes
+          ? 'Open-Meteo historical reanalysis'
+          : 'Historical climate baseline',
+      status: latestDaily
+        ? 'Historical data'
+        : historicalWeatherRes
+          ? 'Historical estimate'
+          : powerClimoRes
+            ? 'Climatology'
+            : 'Estimated',
+      endpointUrl: latestDaily
+        ? recentDailyRes.url
+        : historicalWeatherRes?.url || powerClimoUrl,
       sampleReading: latestDaily
         ? `Latest available date ${latestDaily.date}: ${latestDaily.tempMaxC}°/${latestDaily.tempMinC}°C · ${latestDaily.rainMm} mm precipitation · modeled root-zone wetness ${latestDaily.rootMoisturePct}%`
-        : 'No complete daily observation returned; daily values are omitted.',
+        : historicalWeatherRes
+          ? `No current NASA POWER daily record; ${historicalWeatherRes.period} history is shown as context, not as today's measurement.`
+          : `No daily observation returned; using ${vegetationEstimateSource} for seasonal context, not a current reading.`,
       lastCheckedIso: nowIso,
     },
     {
-      id: 'modis',
-      name: 'NASA MODIS 250m Vegetation Index (MOD13Q1)',
-      provider: 'NASA ORNL DAAC REST Service',
-      status: modisLatest ? 'Historical data' : 'Unavailable',
-      endpointUrl: modisLatest?.url || modisDatesUrl,
+      id: modisLatest ? 'modis' : 'vegetation-estimate',
+      name: modisLatest
+        ? 'NASA MODIS 250m Vegetation Index (MOD13Q1)'
+        : 'Vegetation Index (historical estimate)',
+      provider: modisLatest
+        ? 'NASA ORNL DAAC REST Service'
+        : `${vegetationEstimateSource} · app-derived proxy`,
+      status: modisLatest ? 'Historical data' : vegetationEstimateStatus,
+      endpointUrl: modisLatest
+        ? modisLatest.url
+        : historicalWeatherRes?.url || powerClimoUrl,
       sampleReading: modisLatest
-        ? `MODIS observation ${modisLatest.date}: NDVI ${modisLatest.ndvi.toFixed(2)}${modisLatest.evi !== null ? ` · EVI ${modisLatest.evi.toFixed(2)}` : ''}. Other months use an estimate from ${vegetationEstimateSource}.`
-        : `${modisRes.error || 'No MODIS pixel value returned'}; NDVI is supplied by the separate estimate below.`,
+        ? `MODIS observation ${modisLatest.date}: NDVI ${modisLatest.ndvi.toFixed(2)}${modisLatest.evi !== null ? ` · EVI ${modisLatest.evi.toFixed(2)}` : ''}. Other months use historical climate estimates.`
+        : `MODIS did not return a pixel (${modisRes.error || 'no valid observation'}); NDVI ${currentNdvi.toFixed(2)} is estimated from ${vegetationEstimateSource}, not satellite imagery.`,
       lastCheckedIso: nowIso,
     },
-    {
-      id: 'vegetation-estimate',
-      name: 'Seasonal Vegetation Index Estimate',
-      provider: `${vegetationEstimateSource} (app-derived proxy)`,
-      status: 'Estimated',
-      endpointUrl:
-        climateSource === 'NASA POWER climatology'
-          ? powerClimoUrl
-          : historicalWeatherRes?.url,
-      sampleReading: modisLatest
-        ? `Only the ${modisLatest.date} composite is a MODIS pixel value. Other monthly NDVI/EVI values are estimates; current NDVI ${currentNdvi.toFixed(2)}.`
-        : `No MODIS pixel value was available. NDVI ${currentNdvi.toFixed(2)} is estimated from climate variables, not satellite imagery.`,
-      lastCheckedIso: nowIso,
-    },
+    ...(modisLatest
+      ? [{
+          id: 'vegetation-estimate',
+          name: 'Other Months: Vegetation Estimate',
+          provider: `${vegetationEstimateSource} · app-derived proxy`,
+          status: vegetationEstimateStatus,
+          endpointUrl: historicalWeatherRes?.url || powerClimoUrl,
+          sampleReading: `Only the ${modisLatest.date} composite is a MODIS pixel value; other monthly NDVI/EVI values are estimated from historical climate.`,
+          lastCheckedIso: nowIso,
+        }]
+      : []),
     {
       id: 'soilgrids',
-      name: 'ISRIC SoilGrids 250m Soil Properties',
-      provider: 'ISRIC World Soil Information (modeled map)',
-      status: soil.source === 'ISRIC SoilGrids (modeled)' ? 'Modeled' : 'Fallback',
+      name: soil.source === 'ISRIC SoilGrids (modeled)'
+        ? 'ISRIC SoilGrids 250m Soil Properties'
+        : 'ISRIC SoilGrids (regional estimate)',
+      provider: soil.source === 'ISRIC SoilGrids (modeled)'
+        ? 'ISRIC World Soil Information (modeled map)'
+        : 'ISRIC World Soil Information / regional fallback',
+      status: soil.source === 'ISRIC SoilGrids (modeled)' ? 'Modeled' : 'Estimated',
       endpointUrl: soilRes.url,
       sampleReading:
         soil.source === 'ISRIC SoilGrids (modeled)'
-          ? `Mapped 0–5 cm properties: ${soil.type} · pH ${soil.ph.toFixed(1)} · estimated organic matter ${soil.organicMatterPct}%`
-          : `${soilRes.error || 'ISRIC data unavailable'}; regional baseline assumption (not a local soil test): ${soil.type} · pH ${soil.ph.toFixed(1)}`,
+          ? `ISRIC modeled profile: ${soil.type} · pH ${soil.ph.toFixed(1)} · estimated organic matter ${soil.organicMatterPct}%. This is a static map, not a live soil measurement.`
+          : `${soilRes.error || 'ISRIC data unavailable'}; showing a regional estimate, not a local soil test: ${soil.type} · pH ${soil.ph.toFixed(1)}.`,
       lastCheckedIso: nowIso,
     },
     {
@@ -952,29 +1071,35 @@ export async function getNasaEnvironmentData(loc: ResolvedLocation): Promise<{
       provider: 'Open-Meteo Global Weather API',
       status: forecastDaily.length > 0
         ? 'Current forecast'
-        : climateSource === 'Regional seasonal estimate'
-          ? 'Fallback'
-          : climateSource === 'NASA POWER climatology'
+        : historicalWeatherRes
+          ? 'Historical estimate'
+          : powerClimoRes
             ? 'Climatology'
-            : 'Historical data',
+            : 'Estimated',
       endpointUrl: forecastRes.url,
       sampleReading:
         forecastDaily.length > 0
           ? `Open-Meteo forecast · next 7 days: ${next7Rain} mm rain · minimum ${Math.min(...forecastDaily.slice(0, 7).map((d) => d.tempMinC))}°C`
-          : `Forecast unavailable; ${climateSource} provides seasonal context, not a forecast.`,
+          : `Forecast unavailable; ${historicalWeatherRes?.period || powerClimoRes?.period || 'regional climate baseline'} is seasonal context, not a forecast.`,
       lastCheckedIso: nowIso,
     }
   );
 
   const feeds: DatasetFeedStatus = {
     climateSource,
-    powerDaily: recentDaily.length > 0 ? 'NASA POWER daily' : 'Unavailable',
+    powerDaily: latestDaily
+      ? 'NASA POWER daily'
+      : historicalWeatherRes
+        ? 'Historical estimate'
+        : powerClimoRes
+          ? 'Climatology'
+          : 'Regional estimate',
     modisNdvi: modisLatest
       ? 'NASA MODIS observation'
-      : climateSource === 'NASA POWER climatology'
-        ? 'Estimated from NASA POWER'
-        : climateSource === 'Open-Meteo historical reanalysis'
-          ? 'Estimated from Open-Meteo reanalysis'
+      : historicalWeatherRes
+        ? 'Estimated from Open-Meteo reanalysis'
+        : powerClimoRes
+          ? 'Estimated from NASA POWER'
           : 'Regional vegetation estimate',
     soilGrids: soil.source === 'ISRIC SoilGrids (modeled)' ? 'ISRIC modeled soil map' : 'Regional baseline',
     forecast: forecastDaily.length > 0 ? 'Open-Meteo forecast' : climateSource,

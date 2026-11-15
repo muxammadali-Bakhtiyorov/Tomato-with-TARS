@@ -1,6 +1,6 @@
 {
   "name": "Tomatoes with TARS",
-  "description": "NASA-powered crop rotation planner and water-saving farm almanac using live satellite vegetation, rainfall, temperature, and soil moisture datasets.",
+  "description": "A NASA POWER-first crop rotation planner and farm almanac using gridded climate data, historical weather, and MODIS observations when available.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

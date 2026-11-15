@@ -14,6 +14,17 @@ interface AnalyticsPageProps {
 export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPageProps) {
   const { telemetry, recentDaily, location, feeds, survivalPredictor } = data;
   const hasModisObservation = feeds.modisNdvi === 'NASA MODIS observation';
+  const hasHistoricalVegetationEstimate = feeds.modisNdvi === 'Estimated from Open-Meteo reanalysis';
+  const climateSourceLabel =
+    feeds.climateSource === 'NASA POWER climatology'
+      ? 'NASA POWER'
+      : feeds.climateSource === 'Open-Meteo historical reanalysis'
+        ? 'Open-Meteo history'
+        : 'Regional estimate';
+  const climateSourceBadge =
+    feeds.climateSource === 'Regional seasonal estimate'
+      ? 'bg-amber-100 text-amber-900'
+      : 'bg-sky-100 badge-sky text-sky-800';
   const savedSliders = readStorage<{ rainShiftPct?: number; tempShiftC?: number }>(
     STORAGE_KEYS.ANALYTICS_SLIDERS,
     {}
@@ -93,13 +104,13 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
       <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-mono uppercase tracking-wider text-almanac-forest font-bold">
-            NASA Satellite Observations &middot; {location.name}
+            Environmental Indicators &middot; {location.name}
           </span>
           <h2 className="font-serif font-bold text-2xl sm:text-3xl text-almanac-ink mt-1">
             Moisture, Temperature, Vegetation &amp; Rainfall
           </h2>
           <p className="text-xs sm:text-sm text-almanac-muted mt-1">
-            Seasonal &amp; recent daily NASA earth observation curves for {location.coordsLabel} so you can time planting and irrigation with confidence.
+            NASA POWER climate data, NASA MODIS observations when available, and historical weather-based vegetation estimates for {location.coordsLabel}.
           </p>
         </div>
         <button
@@ -108,7 +119,7 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
           className="bg-almanac-forest btn-forest hover:bg-almanac-forestHover text-white font-bold text-xs px-5 py-3 rounded-full transition shadow-sm flex items-center gap-2 self-start sm:self-auto cursor-pointer whitespace-nowrap"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
-          <span>{scanning ? 'Syncing NASA...' : 'Refresh Satellite Pass'}</span>
+          <span>{scanning ? 'Checking data...' : 'Refresh Data'}</span>
         </button>
       </div>
 
@@ -170,7 +181,7 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
             />
             <div className="flex justify-between text-[10px] font-mono text-almanac-muted">
               <span>-40% Drought</span>
-              <span>Live NASA</span>
+              <span>Current profile</span>
               <span>+40% Wet Year</span>
             </div>
           </div>
@@ -194,14 +205,14 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
             />
             <div className="flex justify-between text-[10px] font-mono text-almanac-muted">
               <span>-3°C Cold / Frost</span>
-              <span>Live NASA</span>
+              <span>Current profile</span>
               <span>+4°C Heatwave</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 4 Core NASA Charts */}
+      {/* Four environmental charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-3">
@@ -209,10 +220,16 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
               <h3 className="font-serif font-bold text-lg text-almanac-ink">
                 1. Soil Moisture &amp; Drought Stress
               </h3>
-              <p className="text-xs text-almanac-muted">Soil Moisture Active Passive (SMAP) Root-Zone &amp; Surface (%)</p>
+              <p className="text-xs text-almanac-muted">
+                {feeds.climateSource === 'NASA POWER climatology'
+                  ? 'NASA POWER gridded root-zone and surface soil-wetness estimates (%)'
+                  : feeds.climateSource === 'Open-Meteo historical reanalysis'
+                    ? 'Open-Meteo historical soil-moisture reanalysis (%)'
+                    : 'Regional seasonal soil-moisture estimates (%)'}
+              </p>
             </div>
-            <span className="shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-sky-100 badge-sky text-sky-800">
-              SMAP L4
+            <span className={`shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full ${climateSourceBadge}`}>
+              {climateSourceLabel}
             </span>
           </div>
           <NasaChart
@@ -250,12 +267,18 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <h3 className="font-serif font-bold text-lg text-almanac-ink">
-                2. Land Surface &amp; Canopy Temperature
+                2. Air &amp; Surface Temperature
               </h3>
-              <p className="text-xs text-almanac-muted">NASA MODIS Skin Temp &amp; Canopy Min/Max (°C)</p>
+              <p className="text-xs text-almanac-muted">
+                {feeds.climateSource === 'NASA POWER climatology'
+                  ? 'NASA POWER land-surface temperature and air-temperature range (°C)'
+                  : feeds.climateSource === 'Open-Meteo historical reanalysis'
+                    ? 'Historical air-temperature range; surface temperature is estimated (°C)'
+                    : 'Regional air-temperature and surface-temperature estimates (°C)'}
+              </p>
             </div>
-            <span className="shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-orange-100 badge-orange text-almanac-terracotta">
-              MODIS / TS
+            <span className={`shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full ${climateSourceBadge}`}>
+              {climateSourceLabel}
             </span>
           </div>
           <NasaChart
@@ -301,10 +324,26 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
               <h3 className="font-serif font-bold text-lg text-almanac-ink">
                 3. Vegetation Greenness (NDVI &amp; EVI)
               </h3>
-              <p className="text-xs text-almanac-muted">NASA MODIS MOD13Q1 250m snapshot when available; other months are estimated from NASA POWER climate data.</p>
+              <p className="text-xs text-almanac-muted">
+                {hasModisObservation
+                  ? 'Latest NASA MODIS composite when returned; other months use historical-weather estimates.'
+                  : hasHistoricalVegetationEstimate
+                    ? 'Estimated from the latest three complete years of weather history; not a satellite NDVI measurement.'
+                    : 'Estimated from long-term climate data; not a satellite NDVI measurement.'}
+              </p>
             </div>
-            <span className={`shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full ${hasModisObservation ? 'bg-emerald-100 badge-emerald text-almanac-forest' : 'bg-amber-100 text-amber-900'}`}>
-              {hasModisObservation ? 'MODIS + estimates' : 'Estimated'}
+            <span className={`shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full ${
+              hasModisObservation
+                ? 'bg-emerald-100 badge-emerald text-almanac-forest'
+                : hasHistoricalVegetationEstimate
+                  ? 'bg-sky-100 badge-sky text-sky-800'
+                  : 'bg-amber-100 text-amber-900'
+            }`}>
+              {hasModisObservation
+                ? 'MODIS + estimates'
+                : hasHistoricalVegetationEstimate
+                  ? 'Historical estimate'
+                  : 'Estimated'}
             </span>
           </div>
           <NasaChart
@@ -344,10 +383,12 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
               <h3 className="font-serif font-bold text-lg text-almanac-ink">
                 4. Rainfall vs. Crop Water Demand
               </h3>
-              <p className="text-xs text-almanac-muted">Global Precipitation Measurement (GPM) &amp; IMERG vs. Irrigation Need (mm/mo)</p>
+              <p className="text-xs text-almanac-muted">
+                {climateSourceLabel} precipitation vs. estimated crop water demand (mm/month)
+              </p>
             </div>
-            <span className="shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-indigo-100 badge-indigo text-indigo-800">
-              GPM &amp; IMERG
+            <span className={`shrink-0 text-[11px] font-mono font-bold px-2.5 py-1 rounded-full ${climateSourceBadge}`}>
+              {climateSourceLabel}
             </span>
           </div>
           <NasaChart
@@ -360,7 +401,7 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
                 labels: simTelemetry.months,
                 datasets: [
                   {
-                    label: 'NASA Precipitation (mm)',
+                    label: 'Precipitation (mm)',
                     data: simTelemetry.rainfall,
                     backgroundColor: P.indigo,
                     borderRadius: 6,
@@ -379,20 +420,20 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
         </div>
       </div>
 
-      {/* Recent Daily NASA Satellite Observations Table */}
+      {/* Recent Daily NASA POWER data */}
       {recentDaily.length > 0 && (
         <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="font-serif font-bold text-lg text-almanac-ink">
-                Recent Daily NASA POWER Observations
+                Recent Daily NASA POWER Data
               </h3>
               <p className="text-xs text-almanac-muted">
-                Latest satellite-derived daily rainfall, root-zone moisture, and surface temperature used for your current irrigation tip
+                Gridded daily weather and modeled soil moisture; these are not direct satellite or on-farm sensor readings.
               </p>
             </div>
             <span className="text-[11px] font-mono text-almanac-forest font-bold">
-              {recentDaily.length} recent daily granules
+              {recentDaily.length} recent daily records
             </span>
           </div>
 
@@ -427,7 +468,7 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
         </div>
       )}
 
-      {/* Plain-English Farm Terms, Uncertainty & Satellite vs. Ground Guide */}
+      {/* Plain-English data and uncertainty guide */}
       <div className="bg-almanac-card border border-almanac-border rounded-3xl p-6 shadow-sm space-y-4">
         <div>
           <span className="text-[11px] font-mono uppercase tracking-wider text-almanac-forest font-bold">
@@ -441,25 +482,25 @@ export function AnalyticsPage({ theme, data, scanning, onRefresh }: AnalyticsPag
           <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1">
             <div className="font-bold text-almanac-ink">🌿 NDVI (Leaf Greenness Score)</div>
             <p className="text-almanac-muted leading-relaxed">
-              Measured by HLS (10m–30m) and MODIS satellites from 0.0 to 1.0. Healthy leafy crops score 0.65–0.85; drops often show water stress before leaves visibly yellow.
+              A satellite vegetation index only when a MODIS pixel is returned. Otherwise this chart shows a weather-based proxy, not a crop measurement. Use a field walk to confirm plant stress.
             </p>
           </div>
           <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1">
             <div className="font-bold text-almanac-ink">💧 Evapotranspiration &amp; Water Balance</div>
             <p className="text-almanac-muted leading-relaxed">
-              &ldquo;Crop Water Demand&rdquo; is how fast sun and wind pull moisture out of leaves and dirt. Comparing it to GPM/IMERG rainfall tells you the exact irrigation gap.
+              &ldquo;Crop Water Demand&rdquo; is an estimate of water use. Compare it with the displayed precipitation history, then check local rainfall and soil before changing irrigation.
             </p>
           </div>
           <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1">
             <div className="font-bold text-almanac-ink">🛰️ Satellites vs. Ground Soil Checks</div>
             <p className="text-almanac-muted leading-relaxed">
-              SMAP soil moisture (~9 km) and GPM rainfall (~10 km) show regional trends, while HLS (10–30m) tracks field canopy. Squeezing dirt 10 cm deep by hand confirms your exact plot.
+              NASA POWER and Open-Meteo provide gridded model/reanalysis values, not measurements from your plot. SoilGrids is also a modeled map; a soil sample and a 10 cm squeeze test give better local confirmation.
             </p>
           </div>
           <div className="bg-white surface-soft border border-almanac-border rounded-2xl p-4 space-y-1">
             <div className="font-bold text-almanac-ink">☁️ Model Uncertainty &amp; Local Judgment</div>
             <p className="text-almanac-muted leading-relaxed">
-              Cloud cover, plastic mulch, drip lines, or shady valleys can create local differences. Use TARS as an early-warning guide alongside your own field walk.
+              Mulch, drip lines, cloud cover, or shady valleys can create local differences. Historical estimates describe seasonal conditions, not today's field state; use TARS alongside your own field checks.
             </p>
           </div>
         </div>

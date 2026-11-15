@@ -1,4 +1,4 @@
-# Soil Chemistry, Irrigation & NASA Satellite Calibration
+# Soil Chemistry, Irrigation & Gridded Data
 
 ## Soil pH & Texture Diagnostics
 - **Alkaline Soils (pH > 7.5)**: Common in arid/semi-arid valleys. Locks up iron, zinc, and phosphorus even when present in fertilizer. Counter with elemental sulfur (gradual), composted organic matter, ammonium-based side-dressing, and avoiding high-bicarbonate water ponding.
@@ -7,10 +7,10 @@
   - High clay (**>35%**) holds water longer but risks hypoxia/root rot if irrigated too frequently; use longer intervals and avoid working soil when muddy (causes compaction).
   - High sand (**>60%**) drains rapidly and leaches nitrogen; split irrigation into shorter, more frequent pulses and build humus with clover/compost.
 
-## Interpreting NASA Satellite Telemetry vs. Field Reality
-- **SMAP Root-Zone Moisture (~9 km grid)**: Tracks regional moisture trends across the top 1 meter. A plot under plastic/straw mulch or localized drip lines can stay **8–15% wetter** at the root zone than the surrounding 9 km SMAP pixel.
-- **HLS NDVI (10–30 m)**: Measures canopy greenness. Low NDVI (<0.30) right after planting or in bare-soil winter fallow is **normal**, not crop failure; watch NDVI trends during mid-season growth to catch stress hotspots 5–7 days before visible wilting.
-- **GPM IMERG Precipitation**: Captures convective storms well, though isolated valley microbursts can vary across a few kilometers. Always verify top **10 cm soil squeeze test** (soil should hold a loose ball without dripping free water) before running a pump.
+## Interpreting Gridded Data vs. Field Reality
+- NASA POWER and weather reanalysis provide broad, model-based climate and soil-wetness context; they are not on-farm sensors.
+- A satellite vegetation index is an observation only when the app reports an actual satellite pixel. A weather-based vegetation proxy is an estimate and cannot diagnose an individual crop.
+- Gridded rainfall and soil-moisture values can differ from a field because of local storms, irrigation, mulch, shade, and soil variation. Always verify top **10 cm soil squeeze test** (soil should hold a loose ball without dripping free water) before running a pump.
 
 ## Water-Saving Field Practices
 - Irrigate between **04:00 and 08:30 AM** to cut wind drift and evaporative loss by **20–30%**.
