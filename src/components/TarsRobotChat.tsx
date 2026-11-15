@@ -172,7 +172,7 @@ export function TarsRobotChat({
   const defaultWelcome: ChatMessage = {
     id: 'welcome',
     role: 'model',
-    text: `*happy beep-boop!* Hi friend! I'm TARS — your tiny steel-and-circuit garden buddy. 🤖🌱 Ask me about ${farmData.location.name}, try virtual crop ideas, peek at other regions via NASA satellites, or tell me quirks about your soil so I remember them!`,
+    text: `*happy beep-boop!* Hi friend! I'm TARS — your tiny steel-and-circuit garden buddy. 🤖🌱 Ask me about ${farmData.location.name}, try virtual crop ideas, compare other regions' climate data, or tell me quirks about your soil so I remember them!`,
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {

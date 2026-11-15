@@ -80,8 +80,8 @@ export function addFieldPlot(
     moistureBadge: 'NASA Synced',
     spotsBadge: '0 Spots',
     reminderTitle: 'Ready for Rotation',
-    reminderNote: `Plot synced to NASA POWER & SoilGrids for ${input.locationQuery}.`,
-    reminderFoot: 'Live satellite schedule active',
+    reminderNote: `Farm profile saved for ${input.locationQuery}.`,
+    reminderFoot: 'Weather and soil context may include historical estimates',
   };
   store.fields.push(plot);
   writeStore(store);

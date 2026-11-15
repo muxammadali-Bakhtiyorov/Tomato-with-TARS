@@ -9,12 +9,14 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
   const { feeds, location } = data;
   const statusStyles = {
     'Current forecast': 'bg-emerald-100 badge-emerald text-almanac-forest',
-    'Historical data': 'bg-sky-100 text-sky-800',
-    Climatology: 'bg-sky-100 text-sky-800',
-    Modeled: 'bg-amber-100 text-amber-900',
-    Estimated: 'bg-amber-100 text-amber-900',
-    Fallback: 'bg-rose-100 text-rose-800',
-    Unavailable: 'bg-rose-100 text-rose-800',
+    'Current model conditions': 'bg-emerald-100 badge-emerald text-almanac-forest',
+    'Historical data': 'bg-emerald-100 badge-emerald text-almanac-forest',
+    Climatology: 'bg-emerald-100 badge-emerald text-almanac-forest',
+    Modeled: 'bg-emerald-100 badge-emerald text-almanac-forest',
+    'Historical estimate': 'bg-sky-100 text-sky-800',
+    Estimated: 'bg-sky-100 text-sky-800',
+    Fallback: 'bg-sky-100 text-sky-800',
+    Unavailable: 'bg-stone-100 text-stone-700',
   } satisfies Record<(typeof data.feeds.proofs)[number]['status'], string>;
 
   return (
@@ -24,10 +26,10 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
           Data Provenance &bull; {location.name} ({location.coordsLabel})
         </span>
         <h2 className="font-serif font-bold text-2xl sm:text-3xl text-almanac-ink">
-          Data sources, freshness &amp; fallbacks
+          Data sources, freshness &amp; estimates
         </h2>
         <p className="text-sm text-almanac-muted max-w-3xl leading-relaxed">
-          NASA POWER and NASA MODIS are the primary sources for climate and vegetation data. POWER climatology is a long-term gridded estimate, not a live farm sensor; forecasts and modeled soil maps come from other providers. Each row says what data was actually returned.
+          Refresh checks the latest NASA POWER daily data, Open-Meteo current conditions and forecast, NASA MODIS vegetation, and ISRIC SoilGrids. Products update at different rates: climatology and soil maps are not real-time. Green means a provider returned data; blue means an estimate or fallback; unavailable sources are neutral.
         </p>
       </div>
 
@@ -85,7 +87,7 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
         </div>
 
         <div className="pt-3 border-t border-almanac-border text-xs text-almanac-muted leading-relaxed">
-          <strong className="text-almanac-ink">Data notes:</strong> NASA POWER supplies gridded climate values and modeled soil wetness when available; Open-Meteo historical reanalysis is used only if POWER fails. NASA MODIS pixel values replace the seasonal NDVI/EVI estimate when available. Open-Meteo also supplies the 14-day forecast because POWER is not a forecast feed. ISRIC SoilGrids is a modeled regional soil map, not a lab test. Catalog entries alone are not treated as measurements.
+          <strong className="text-almanac-ink">Data notes:</strong> Green does not always mean real-time: NASA POWER climatology is a long-term average, NASA POWER daily data has a publication delay, and SoilGrids is a static modeled map. Open-Meteo current conditions are model analysis, not a farm sensor; its 14-day forecast is a forecast. NASA MODIS is a 16-day satellite composite when available. If a provider has no usable values, the blue estimate is labeled and is not presented as a measurement.
         </div>
       </div>
     </section>

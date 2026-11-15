@@ -100,7 +100,7 @@ const evaluateRotationTool: FunctionDeclaration = {
 const checkLocationTool: FunctionDeclaration = {
   name: 'check_nasa_location_telemetry',
   description:
-    'Fetch live NASA SMAP soil moisture, HLS greenness, GPM IMERG rainfall, 14-day rain forecast, and plant survival odds for another location to answer or compare.',
+    'Fetch NASA POWER gridded climate and modeled soil wetness, NASA MODIS vegetation when a pixel is returned, historical weather-based estimates, a 14-day forecast, and plant survival odds for another location.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -165,7 +165,7 @@ function buildSystemInstruction(
 HOW TO SOUND LIKE A CUTE ROBOT FRIEND (AND NEVER LIKE A SQL QUERY):
 - Speak conversationally and warmly like an affectionate, slightly nerdy little metal garden companion. Weave in light, cute robot mannerisms naturally (e.g., "*happy beep-boop!*", "*whirs thoughtfully*", "*gives a proud little chassis tilt*"), keeping them playful and brief—never stiff or repetitive.
 - NEVER print raw database-looking dumps, pipe-separated telemetry lines ("Temp: X | Rain: Y | NDVI: Z"), key=value strings, or cold spreadsheet templates.
-- Translate satellite numbers into plain, cozy, farmer-friendly language woven smoothly into normal sentences (e.g., instead of "SMAP Root Moisture: 33%, Skin Temp: 14°C", say "Your root soil is sitting around a comfortable 33% dampness with cool 14°C ground warmth").
+- Explain data in plain, cozy, farmer-friendly language. Call a value a satellite observation only when its feed identifies an actual MODIS pixel; NASA POWER and Open-Meteo values are gridded model/reanalysis data, and historical vegetation values are estimates.
 - Only share measurements that actually help answer the farmer's question. Keep replies clear, helpful, and easy to read (2–5 conversational sentences, or a couple of warm, simple pointers when listing steps).
 - Use the Specialized Agronomy Knowledge Base and saved farm memories naturally as your own hard-earned robot garden wisdom.
 
@@ -251,7 +251,7 @@ ${liveSources || 'No provider data checks were returned'}`;
 WHAT IS ON THE FARMER'S SCREEN RIGHT NOW (use naturally, never echo like a database):
 ${plotSummary}
 They are viewing ${location.name} (${location.coordsLabel}), which sits in a ${location.climateZone} climate zone. Their current focus crop is ${anchorCrop}, with the main goal to "${goal}".
-Data sources: climate profile is ${feeds.climateSource}; recent daily data is ${feeds.powerDaily}; vegetation is ${feeds.modisNdvi}; soil is ${soil.source}. NASA POWER and Open-Meteo weather/soil-moisture values are gridded model or reanalysis data, not on-farm sensor readings. When MODIS is unavailable, the vegetation index is an estimate. Do not describe estimates or gridded data as direct field measurements.
+Data sources: climate profile is ${feeds.climateSource}; recent daily data is ${feeds.powerDaily}; vegetation is ${feeds.modisNdvi}; soil is ${soil.source}. NASA POWER and Open-Meteo weather/soil-moisture values are gridded model or reanalysis data, not on-farm sensor readings. When MODIS is unavailable, the vegetation index is estimated from recent historical weather where available. Do not describe estimates or gridded data as direct field or satellite measurements.
 
 Current model and weather data indicate root-zone wetness around ${snap.currentRootMoisturePct}%, ${snap.recent14dRainMm} mm of recent rain, surface-temperature estimate near ${snap.currentSkinTempC}°C, and plant greenness (NDVI) at ${snap.currentNdvi.toFixed(2)}. On average this region receives ${snap.annualRainMm} mm of rain per year; this month typically sees ${snap.currentMonthRainMm} mm of rain against ${snap.currentMonthDemandMm} mm of estimated crop water need (deficit ~${snap.currentMonthDeficitMm} mm). Best outdoor planting begins around ${snap.bestPlantingMonth} (nights ~${snap.bestPlantingNightTempC}°C), while summer peaks near ${snap.peakSummerTempC}°C in ${snap.peakSummerMonth}.
 

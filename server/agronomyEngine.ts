@@ -1026,7 +1026,7 @@ export function buildAgronomicPlan(params: {
     waterStepDetail = `Moisture evaporates quickly in warm weather. Spread straw mulch to lock soil moisture in.`;
   }
 
-  const summary = `Satellite data analysis for ${farmLabel} in ${location.name}: root-zone soil moisture sits at ${currentRootMoisturePct}%, annual rainfall averages ${annualRainMm} mm, and ground temp is ${currentSkinTempC}°C. Recommended 4-season rotational planning preserves soil health and saves roughly ${baseSavings}% on irrigation.${harvestNote}`;
+  const summary = `Climate and environmental data for ${farmLabel} in ${location.name}: estimated root-zone soil wetness is ${currentRootMoisturePct}%, annual rainfall averages ${annualRainMm} mm, and estimated surface temperature is ${currentSkinTempC}°C. Recommended 4-season rotational planning preserves soil health and saves roughly ${baseSavings}% on irrigation.${harvestNote}`;
 
   const doNowSteps: QuickActionTip['doNowSteps'] = [
     {

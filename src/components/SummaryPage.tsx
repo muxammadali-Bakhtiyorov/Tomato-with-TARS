@@ -1232,16 +1232,20 @@ export function SummaryPage({
             </span>
           </div>
           <div className="font-serif font-bold text-4xl text-almanac-ink tabular-nums">
-            {Math.max(activeField?.cropStrength || 85, Math.round(snap.currentNdvi * 100))} / 100
+            {Math.round(snap.currentNdvi * 100)} / 100
           </div>
           <p className="text-xs text-almanac-muted leading-relaxed">
-            Satellite NDVI leaf health score is {Math.round(snap.currentNdvi * 100)}% for this time of year.
+            {feeds.modisNdvi === 'NASA MODIS observation'
+              ? `Latest available MODIS NDVI is ${Math.round(snap.currentNdvi * 100)}%.`
+              : feeds.modisNdvi === 'Estimated from Open-Meteo reanalysis'
+                ? `Historical-weather estimate of vegetation greenness is ${Math.round(snap.currentNdvi * 100)}%; this is not a satellite measurement.`
+                : `Climate-based vegetation greenness estimate is ${Math.round(snap.currentNdvi * 100)}%; this is not a satellite measurement.`}
           </p>
           <div className="w-full h-2.5 bg-almanac-pill rounded-full overflow-hidden">
             <div
               className="h-full bg-almanac-forest rounded-full transition-all duration-500"
               style={{
-                width: `${Math.min(100, Math.max(activeField?.cropStrength || 85, Math.round(snap.currentNdvi * 100)))}%`,
+                width: `${Math.min(100, Math.max(0, Math.round(snap.currentNdvi * 100)))}%`,
               }}
             />
           </div>
@@ -1295,7 +1299,7 @@ export function SummaryPage({
       {/* Field Reality Check */}
       <div className="bg-almanac-pill/55 border border-almanac-border rounded-2xl px-5 py-3.5 text-xs text-almanac-ink leading-relaxed">
         <strong className="font-serif text-almanac-forest">Your eyes come first:</strong>{' '}
-        Satellites see broad 30m–9km patches and support—not replace—local experience. Always squeeze soil 10 cm deep by hand and check low frost pockets or local water gates before irrigating or transplanting.
+        Gridded climate and satellite data describe broad areas, not your exact field, and support—not replace—local experience. Always squeeze soil 10 cm deep by hand and check low frost pockets or local water gates before irrigating or transplanting.
       </div>
 
       {/* SUMMARY GRAPHS */}

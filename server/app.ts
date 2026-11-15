@@ -76,6 +76,7 @@ export function createApiApp() {
       const farmName = typeof req.query.farmName === 'string' ? req.query.farmName : undefined;
       const areaHa = typeof req.query.areaHa === 'string' ? Number(req.query.areaHa) : undefined;
       const plantedDate = typeof req.query.plantedDate === 'string' ? req.query.plantedDate : undefined;
+      const forceRefresh = req.query.refresh === '1';
 
       const resolved = await resolveLocation(
         q,
@@ -83,7 +84,7 @@ export function createApiApp() {
         Number.isFinite(lonRaw) ? lonRaw : undefined
       );
 
-      const nasaData = await getNasaEnvironmentData(resolved);
+      const nasaData = await getNasaEnvironmentData(resolved, { forceRefresh });
       const agronomy = buildAgronomicPlan({
         location: nasaData.location,
         soil: nasaData.soil,
