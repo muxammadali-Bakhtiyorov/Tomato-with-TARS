@@ -45,7 +45,7 @@ GPM IMERG and NASA EONET are not currently integrated into this app. The related
 - **Blue:** the app is showing a labeled estimate or fallback because the requested source did not provide usable data.
 - **Gray:** the feed is unavailable and no usable value was returned.
 
-The Data Sources page shows each feed's provider, latest reading or failure reason, and source URL. Do not interpret a green climatology or soil-map badge as a live observation.
+The Data Sources page shows each feed's provider, latest reading or failure reason, and source URL. Each provider card links to an official dataset explainer with **About dataset** and to the requested response with **Inspect source**. Do not interpret a green climatology or soil-map badge as a live observation.
 
 ## Project layout
 

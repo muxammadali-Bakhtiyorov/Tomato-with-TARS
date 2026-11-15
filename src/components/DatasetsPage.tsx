@@ -5,6 +5,17 @@ interface DatasetsPageProps {
   data: NasaFarmResponse;
 }
 
+const datasetArticles: Record<string, string> = {
+  'power-climo': 'https://power.larc.nasa.gov/docs/services/api/temporal/climatology/',
+  'open-meteo-current': 'https://open-meteo.com/en/docs',
+  'open-meteo-history': 'https://open-meteo.com/en/docs/historical-weather-api',
+  'power-daily': 'https://power.larc.nasa.gov/docs/services/api/temporal/daily/',
+  modis: 'https://www.earthdata.nasa.gov/data/catalog/lpcloud-mod13q1-061',
+  'vegetation-estimate': 'https://open-meteo.com/en/docs/historical-weather-api',
+  soilgrids: 'https://www.isric.org/explore/soilgrids',
+  forecast: 'https://open-meteo.com/en/docs',
+};
+
 export function DatasetsPage({ data }: DatasetsPageProps) {
   const { feeds, location } = data;
   const statusStyles = {
@@ -70,16 +81,31 @@ export function DatasetsPage({ data }: DatasetsPageProps) {
                   <div className="text-xs text-almanac-ink font-medium">{proof.sampleReading}</div>
                 </div>
 
-                {proof.endpointUrl && (
-                  <a
-                    href={proof.endpointUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-[11px] font-mono text-almanac-ink transition whitespace-nowrap self-start lg:self-auto"
-                  >
-                    <span>Inspect source</span>
-                    <ExternalLink className="w-3 h-3 text-almanac-forest" />
-                  </a>
+                {(datasetArticles[proof.id] || proof.endpointUrl) && (
+                  <div className="shrink-0 flex flex-wrap items-center gap-2 self-start lg:self-auto">
+                    {datasetArticles[proof.id] && (
+                      <a
+                        href={datasetArticles[proof.id]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-[11px] font-mono text-almanac-ink transition whitespace-nowrap"
+                      >
+                        <span>About dataset</span>
+                        <ExternalLink className="w-3 h-3 text-almanac-forest" />
+                      </a>
+                    )}
+                    {proof.endpointUrl && (
+                      <a
+                        href={proof.endpointUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-almanac-pill hover:bg-almanac-border border border-almanac-borderDark text-[11px] font-mono text-almanac-ink transition whitespace-nowrap"
+                      >
+                        <span>Inspect source</span>
+                        <ExternalLink className="w-3 h-3 text-almanac-forest" />
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
             ))
