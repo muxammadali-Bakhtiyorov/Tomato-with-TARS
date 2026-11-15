@@ -281,6 +281,7 @@ ${rotationSteps}${extendedTables}`;
 async function executeTarsTool(
   name: string,
   args: Record<string, unknown> | undefined,
+  userId: string,
   currentFarm?: NasaFarmResponse
 ): Promise<{ result: Record<string, unknown>; label: string }> {
   if (name === 'evaluate_custom_rotation') {
@@ -354,7 +355,7 @@ async function executeTarsTool(
     if (!noteText) {
       return { label: 'Skipped Empty Note', result: { saved: false, error: 'Note text was empty.' } };
     }
-    const saved = addFarmNote(noteText);
+    const saved = addFarmNote(userId, noteText);
     return {
       label: 'Tucked Into Memory',
       result: { saved: true, note: saved },
@@ -367,7 +368,7 @@ async function executeTarsTool(
   };
 }
 
-export async function runTarsChat(payload: ChatRequestPayload): Promise<ChatResponsePayload> {
+export async function runTarsChat(payload: ChatRequestPayload, userId: string): Promise<ChatResponsePayload> {
   const messages = Array.isArray(payload.messages)
     ? payload.messages.filter((m) => m && typeof m.text === 'string' && m.text.trim().length > 0)
     : [];
@@ -382,7 +383,7 @@ export async function runTarsChat(payload: ChatRequestPayload): Promise<ChatResp
   }
 
   const ai = getAiClient();
-  const existingNotes = listFarmNotes();
+  const existingNotes = listFarmNotes(userId);
 
   const contents: Content[] = messages.map((turn) => ({
     role: turn.role,
@@ -445,6 +446,7 @@ export async function runTarsChat(payload: ChatRequestPayload): Promise<ChatResp
         const executed = await executeTarsTool(
           callName,
           call.args as Record<string, unknown> | undefined,
+          userId,
           payload.farmData
         );
         if (!toolsUsed.includes(executed.label)) {
@@ -475,7 +477,7 @@ export async function runTarsChat(payload: ChatRequestPayload): Promise<ChatResp
       reply,
       toolsUsed,
       knowledgeUsed: matchedModules,
-      notes: listFarmNotes(),
+      notes: listFarmNotes(userId),
     };
   }
 
@@ -546,8 +548,9 @@ function buildDeterministicFarmAdvice(
 export async function generateFarmAiAdvice(params: {
   farmData: NasaFarmResponse;
   activeField?: FarmFieldPlot;
+  userId: string;
 }): Promise<FarmAiAdvice> {
-  const { farmData, activeField } = params;
+  const { farmData, activeField, userId } = params;
   const fallback = buildDeterministicFarmAdvice(farmData, activeField);
 
   if (!process.env.GEMINI_API_KEY) {
@@ -556,7 +559,7 @@ export async function generateFarmAiAdvice(params: {
 
   try {
     const ai = getAiClient();
-    const notes = listFarmNotes();
+    const notes = listFarmNotes(userId);
     const playbook = farmData.cropPlaybook;
     const cropName = playbook?.cropName || farmData.survivalPredictor.cropName || farmData.anchorCrop;
     const snap = farmData.quickTip.metricsSnapshot;

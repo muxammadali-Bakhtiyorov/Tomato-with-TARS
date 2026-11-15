@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { readStorage, STORAGE_KEYS, writeStorage } from '../lib/persistence';
+import { apiFetch } from '../lib/supabase';
 import type { FarmFieldPlot, FarmNote, NasaFarmResponse } from '../types/farm';
 
 interface ChatMessage {
@@ -205,7 +206,7 @@ export function TarsRobotChat({
     if (!visible) return;
     let active = true;
     const localNotes = readStorage<FarmNote[]>(STORAGE_KEYS.NOTES, []);
-    fetch('/api/notes')
+    apiFetch('/api/notes')
       .then((res) => (res.ok ? res.json() : null))
       .then(async (json: { notes?: FarmNote[] } | null) => {
         if (!active || !Array.isArray(json?.notes)) return;
@@ -216,7 +217,7 @@ export function TarsRobotChat({
         if (missingLocal.length > 0) {
           let latest = serverNotes;
           for (const ln of missingLocal) {
-            const postRes = await fetch('/api/notes', {
+            const postRes = await apiFetch('/api/notes', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ text: ln.text }),
@@ -304,7 +305,7 @@ export function TarsRobotChat({
         .filter((m) => m.id !== 'welcome')
         .map((m) => ({ role: m.role, text: m.text }));
 
-      const res = await fetch('/api/chat', {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -350,7 +351,7 @@ export function TarsRobotChat({
     if (!trimmed || savingNote) return;
     setSavingNote(true);
     try {
-      const res = await fetch('/api/notes', {
+      const res = await apiFetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: trimmed }),
@@ -368,7 +369,7 @@ export function TarsRobotChat({
 
   const handleDeleteNote = async (id: string) => {
     try {
-      const res = await fetch(`/api/notes/${encodeURIComponent(id)}`, {
+      const res = await apiFetch(`/api/notes/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       const json = (await res.json()) as { notes?: FarmNote[] };

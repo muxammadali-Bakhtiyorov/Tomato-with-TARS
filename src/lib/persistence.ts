@@ -8,10 +8,20 @@ export const STORAGE_KEYS = {
   ANALYTICS_SLIDERS: 'tars_almanac_sliders_v1',
 } as const;
 
+let storageUserId: string | null = null;
+
+export function setStorageUserId(userId: string | null): void {
+  storageUserId = userId;
+}
+
+function scopedKey(key: string): string {
+  return storageUserId ? `${key}:${storageUserId}` : key;
+}
+
 export function readStorage<T>(key: string, fallback: T): T {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return fallback;
-    const raw = window.localStorage.getItem(key);
+    const raw = window.localStorage.getItem(scopedKey(key));
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
@@ -22,7 +32,7 @@ export function readStorage<T>(key: string, fallback: T): T {
 export function writeStorage<T>(key: string, value: T): void {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(scopedKey(key), JSON.stringify(value));
   } catch {
     // Ignore storage quota or private-mode restrictions
   }

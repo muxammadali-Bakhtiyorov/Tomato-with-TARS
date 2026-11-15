@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Satellite } from 'lucide-react';
 import { AnalyticsPage } from './components/AnalyticsPage';
+import { AuthGate, useAuth } from './components/AuthGate';
 import { DashboardHeader } from './components/DashboardHeader';
 import { DatasetsPage } from './components/DatasetsPage';
 import { FarmPage } from './components/FarmPage';
 import { OrbitalLanding } from './components/OrbitalLanding';
 import { SummaryPage } from './components/SummaryPage';
 import { TarsRobotChat } from './components/TarsRobotChat';
+import { apiFetch } from './lib/supabase';
 import { readStorage, STORAGE_KEYS, writeStorage } from './lib/persistence';
 import type {
   AnchorCrop,
@@ -205,6 +207,20 @@ const INITIAL_FALLBACK_DATA: NasaFarmResponse = {
 };
 
 export default function App() {
+  return (
+    <AuthGate>
+      <AuthenticatedApp />
+    </AuthGate>
+  );
+}
+
+function AuthenticatedApp() {
+  const { user } = useAuth();
+  return <FarmDashboard key={user.id} />;
+}
+
+function FarmDashboard() {
+  const { user, signOut } = useAuth();
   const initialPrefs = useMemo(
     () =>
       readStorage<Partial<SavedAppPrefs>>(STORAGE_KEYS.APP_PREFS, {}),
@@ -236,7 +252,7 @@ export default function App() {
 
   useEffect(() => {
     setLoadingAiAdvice(true);
-    fetch('/api/farm/ai-advice', {
+    apiFetch('/api/farm/ai-advice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -331,7 +347,7 @@ export default function App() {
             setScanMessage('Checking live weather, MODIS, SoilGrids & historical sources...');
           }, 150);
         }
-        const res = await fetch(`/api/nasa/telemetry?${params.toString()}`, {
+        const res = await apiFetch(`/api/nasa/telemetry?${params.toString()}`, {
           cache: forceRefresh ? 'no-store' : 'default',
         });
         if (!res.ok) throw new Error('Telemetry request failed');
@@ -363,7 +379,7 @@ export default function App() {
     const localFields = readStorage<FarmFieldPlot[]>(STORAGE_KEYS.FIELDS, []).filter(
       (lf) => !LEGACY_SEED_IDS.has(lf.id)
     );
-    fetch('/api/fields')
+    apiFetch('/api/fields')
       .then((r) => r.json())
       .then(async (j: { fields?: FarmFieldPlot[] }) => {
         const serverFields = j.fields ?? [];
@@ -374,7 +390,7 @@ export default function App() {
         if (missingLocal.length > 0) {
           let latestFields = serverFields;
           for (const mf of missingLocal) {
-            const postRes = await fetch('/api/fields', {
+            const postRes = await apiFetch('/api/fields', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -438,7 +454,7 @@ export default function App() {
       });
 
     const localPlans = readStorage<SavedFarmPlan[]>(STORAGE_KEYS.PLANS, []);
-    fetch('/api/plans')
+    apiFetch('/api/plans')
       .then((r) => r.json())
       .then((j: { plans?: SavedFarmPlan[] }) => {
         const serverPlans = j.plans ?? [];
@@ -545,7 +561,7 @@ export default function App() {
     goal: RotationGoal;
     plantedDate?: string;
   }) => {
-    const res = await fetch('/api/fields', {
+    const res = await apiFetch('/api/fields', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -582,7 +598,7 @@ export default function App() {
       plantedDate: string;
     }>
   ) => {
-    const res = await fetch(`/api/fields/${encodeURIComponent(id)}`, {
+    const res = await apiFetch(`/api/fields/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -611,7 +627,7 @@ export default function App() {
   };
 
   const handleDeleteField = async (id: string) => {
-    const res = await fetch(`/api/fields/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/fields/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (!res.ok) {
       showToast('Could not delete farm plot');
       return;
@@ -645,7 +661,7 @@ export default function App() {
     if (savingPlan) return;
     setSavingPlan(true);
     try {
-      const res = await fetch('/api/plans', {
+      const res = await apiFetch('/api/plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -676,7 +692,7 @@ export default function App() {
 
   const handleDeletePlan = async (id: string) => {
     try {
-      const res = await fetch(`/api/plans/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/plans/${encodeURIComponent(id)}`, { method: 'DELETE' });
       const json = (await res.json()) as { plans: SavedFarmPlan[] };
       setSavedPlans(json.plans);
       writeStorage(STORAGE_KEYS.PLANS, json.plans);
@@ -765,6 +781,10 @@ export default function App() {
             onSelectTheme={handleSelectTheme}
             onToggleTarsChat={() => setTarsChatOpen((v) => !v)}
             onReturnToOrbit={handleReturnToOrbit}
+            userEmail={user.email ?? user.id}
+            onSignOut={() => {
+              void signOut().catch(() => showToast('Unable to sign out. Please try again.'));
+            }}
           />
 
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-36">

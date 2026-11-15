@@ -1,4 +1,4 @@
-import { BarChart3, Bot, Globe, Moon, Satellite, Sparkles, Sprout, Sun } from 'lucide-react';
+import { BarChart3, Bot, Globe, LogOut, Moon, Satellite, Sparkles, Sprout, Sun } from 'lucide-react';
 import type { DashboardPage, ThemeMode } from '../types/farm';
 
 interface DashboardHeaderProps {
@@ -8,6 +8,8 @@ interface DashboardHeaderProps {
   onSelectTheme: (theme: ThemeMode, originEl: HTMLButtonElement | null) => void;
   onToggleTarsChat: () => void;
   onReturnToOrbit: () => void;
+  userEmail: string;
+  onSignOut: () => void;
 }
 
 const TABS: {
@@ -28,6 +30,8 @@ export function DashboardHeader({
   onSelectTheme,
   onToggleTarsChat,
   onReturnToOrbit,
+  userEmail,
+  onSignOut,
 }: DashboardHeaderProps) {
   const isSun = theme === 'sun';
 
@@ -108,6 +112,15 @@ export function DashboardHeader({
             >
               <Globe className="w-3.5 h-3.5 text-almanac-forest" />
               <span>Orbit View</span>
+            </button>
+
+            <button
+              onClick={onSignOut}
+              className="px-3 py-2 rounded-full bg-almanac-card hover:bg-almanac-pill border border-almanac-border text-xs font-semibold text-almanac-ink transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+              title={`Sign out ${userEmail}`}
+            >
+              <LogOut className="w-3.5 h-3.5 text-almanac-forest" />
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </div>
         </div>
